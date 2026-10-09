@@ -24,6 +24,7 @@ let streamedText = "";
 let pendingPermission = null;
 let attachments = [];
 let runStartedAt = Date.now();
+let stepSequence = 0;
 
 function showToast(message) {
 	elements.toast.textContent = message;
@@ -37,6 +38,55 @@ function setRunning(running) {
 	elements.send.innerHTML = `<iconify-icon icon="${running ? "solar:stop-bold" : "solar:arrow-up-linear"}"></iconify-icon>`;
 	elements.runStatus.textContent = running ? "运行中" : "空闲";
 	elements.stop.disabled = !running;
+}
+
+function updateRunProgress() {
+	const steps = [...document.querySelectorAll("#steps > li")];
+	const completed = steps.filter((step) => step.classList.contains("done")).length;
+	const progress = steps.length ? Math.round((completed / steps.length) * 100) : 0;
+	elements.progress.style.width = `${progress}%`;
+	elements.progressCount.textContent = `${completed} / ${steps.length}`;
+}
+
+function addRunStep(key, title, detail, status = "running") {
+	const list = document.querySelector("#steps");
+	let item = list.querySelector(`[data-step-key="${key}"]`);
+	if (!item) {
+		item = document.createElement("li");
+		item.dataset.stepKey = key;
+		item.innerHTML = '<span class="step-state"></span><div><strong></strong><small></small></div><time></time>';
+		list.append(item);
+	}
+	item.className = status;
+	item.querySelector("strong").textContent = title;
+	item.querySelector("small").textContent = detail;
+	item.querySelector("time").textContent = currentTime();
+	item.querySelector(".step-state").innerHTML = status === "done" ? '<iconify-icon icon="solar:check-circle-bold"></iconify-icon>' : "";
+	updateRunProgress();
+	return item;
+}
+
+function completeRunStep(key, detail) {
+	const item = document.querySelector(`#steps [data-step-key="${key}"]`);
+	if (!item) return;
+	item.className = "done";
+	if (detail) item.querySelector("small").textContent = detail;
+	item.querySelector("time").textContent = currentTime();
+	item.querySelector(".step-state").innerHTML = '<iconify-icon icon="solar:check-circle-bold"></iconify-icon>';
+	updateRunProgress();
+}
+
+function messageText(message) {
+	if (!message || message.role !== "assistant") return "";
+	if (typeof message.content === "string") return message.content;
+	if (!Array.isArray(message.content)) return "";
+	return message.content.filter((part) => part?.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
+}
+
+function resetRunSteps() {
+	document.querySelector("#steps").replaceChildren();
+	stepSequence = 0;
+	updateRunProgress();
 }
 
 function currentTime() {
@@ -86,6 +136,7 @@ function resetConversation() {
 	elements.progress.style.width = "0";
 	elements.progressCount.textContent = "0 / 6";
 	elements.permission.classList.add("resolved");
+	resetRunSteps();
 	document.querySelector("#steps").hidden = true;
 	setRunning(false);
 }
@@ -127,16 +178,51 @@ function updateStep({ index, status, detail, progress }) {
 }
 
 function handlePiEvent(record) {
-	if (record.type === "agent_start") setRunning(true);
-	if (record.type === "agent_settled" || record.type === "agent_end") setRunning(false);
+	if (record.type === "agent_start") {
+		setRunning(true);
+		completeRunStep("connection", "Pi 已开始处理");
+		addRunStep("analysis", "Pi 分析任务", "正在理解上下文并规划响应");
+	}
+	if (record.type === "agent_settled" || record.type === "agent_end") {
+		if (!document.querySelector('#steps [data-step-key="response"]')) addRunStep("response", "生成回复", "Pi 已结束本轮处理", "done");
+		completeRunStep("response", "回复已生成");
+		document.querySelectorAll("#steps > li.running").forEach((item) => completeRunStep(item.dataset.stepKey, "已完成"));
+		setRunning(false);
+		elements.runStatus.textContent = "已完成";
+	}
 	if (record.type === "tool_execution_start") {
-		elements.activeStepDetail.textContent = `正在调用 ${record.toolName || "工具"}…`;
+		completeRunStep("analysis", "分析完成");
+		const key = `tool-${++stepSequence}`;
+		addRunStep(key, record.toolName || "Pi 工具调用", "正在执行工具");
+		if (record.toolCallId) document.querySelector(`#steps [data-step-key="${key}"]`).dataset.toolCallId = record.toolCallId;
 		elements.runPanel.classList.add("open");
 	}
+	if (record.type === "tool_execution_end") {
+		const item = record.toolCallId ? document.querySelector(`#steps [data-tool-call-id="${record.toolCallId}"]`) : [...document.querySelectorAll("#steps > li.running")].at(-1);
+		if (item) completeRunStep(item.dataset.stepKey, record.isError ? "工具执行失败" : "工具执行完成");
+	}
 	if (record.type === "message_update" && record.assistantMessageEvent?.type === "text_delta") {
+		completeRunStep("analysis", "分析完成");
+		addRunStep("response", "生成回复", "正在流式输出结果");
 		streamedText += record.assistantMessageEvent.delta;
 		const target = [...document.querySelectorAll(".assistant-text")].at(-1) || appendMessage("assistant");
 		target.textContent = streamedText;
+	}
+	if (record.type === "message_end") {
+		const finalText = messageText(record.message);
+		if (finalText) {
+			streamedText = finalText;
+			const target = [...document.querySelectorAll(".assistant-text")].at(-1) || appendMessage("assistant");
+			target.textContent = finalText;
+		}
+	}
+	if (record.type === "agent_end" && Array.isArray(record.messages)) {
+		const finalText = messageText([...record.messages].reverse().find((message) => message?.role === "assistant"));
+		if (finalText) {
+			streamedText = finalText;
+			const target = [...document.querySelectorAll(".assistant-text")].at(-1) || appendMessage("assistant");
+			target.textContent = finalText;
+		}
 	}
 	if (record.type === "extension_ui_request") {
 		if (record.method === "notify") return showToast(record.message);
@@ -200,7 +286,10 @@ elements.composer.addEventListener("submit", async (event) => {
 	const title = message.slice(0, 22);
 	document.querySelector(".conversation-header h1").textContent = title;
 	document.querySelector("#runTitle").textContent = title;
+	resetRunSteps();
 	document.querySelector("#steps").hidden = false;
+	addRunStep("submitted", "任务已提交", "请求已发送到 Pi", "done");
+	addRunStep("connection", "等待 Pi 响应", "已连接真实 Pi RPC");
 	if (!document.querySelector("#historyList .history-item.selected")) addHistoryItem(title);
 	setRunning(true);
 	try {
@@ -333,6 +422,9 @@ document.querySelectorAll(".primary-nav .nav-item:not(.active), .sidebar-footer 
 	}
 });
 document.querySelector("#newConversationButton").addEventListener("click", async () => {
+	const button = document.querySelector("#newConversationButton");
+	button.disabled = true;
+	elements.prompt.disabled = true;
 	try {
 		await post("/api/session/new");
 		resetConversation();
@@ -342,6 +434,9 @@ document.querySelector("#newConversationButton").addEventListener("click", async
 		showToast("已创建新的 Pi 会话");
 	} catch (error) {
 		showToast(error.message);
+	} finally {
+		button.disabled = false;
+		elements.prompt.disabled = false;
 	}
 });
 document.querySelector("#historyList").addEventListener("click", (event) => {
