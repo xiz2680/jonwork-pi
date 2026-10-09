@@ -50,9 +50,11 @@ npm run dev --workspace=@jonwork/pi-web -- --host 127.0.0.1 --port 4318
 - PNG/JPEG/WebP 图片附件（最多 4 张、单请求总计 5 MB）
 - 语音输入（取决于浏览器 Web Speech 支持）
 - 结果大图、分享链接、建议快捷指令
-- Pi CLI 尚未构建时显示明确的演示模式
+- Pi CLI 尚未构建或不可用时拒绝任务，不返回任何模拟结果
 
 默认身份是“本地用户 / 未登录”。它不是企业账号，也不会伪造用户资料；接入企业 SSO 后应由认证会话覆盖该显示。
+
+图像产出必须来自当前会话中的真实 Pi 图像工具调用。当前 Pi 图像模型通过 OpenRouter 提供；配置 `OPENROUTER_API_KEY` 或完成 Pi 的 OpenRouter 登录后，设计请求可使用 `codemode` 生成图片。未配置时界面会明确显示能力不可用，不会使用样例图替代。
 
 ## 验证
 

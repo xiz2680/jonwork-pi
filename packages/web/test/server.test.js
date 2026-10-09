@@ -39,17 +39,27 @@ test("validates empty prompts", async () => {
 	assert.equal(response.status, 400);
 });
 
-test("accepts a prompt in explicit demo mode", async () => {
+test("rejects prompts when Pi RPC is unavailable", async () => {
 	const response = await fetch(`http://127.0.0.1:${port}/api/prompt`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ message: "test" }),
 	});
-	assert.deepEqual(await response.json(), { accepted: true, mode: "demo" });
+	assert.equal(response.status, 503);
+	assert.deepEqual(await response.json(), { error: "设计服务暂不可用，请稍后重试" });
 });
 
-test("creates a fresh session in explicit demo mode", async () => {
+test("rejects fake sessions when Pi RPC is unavailable", async () => {
 	const response = await fetch(`http://127.0.0.1:${port}/api/session/new`, { method: "POST" });
-	assert.equal(response.status, 201);
-	assert.deepEqual(await response.json(), { created: true, mode: "demo" });
+	assert.equal(response.status, 503);
+	assert.deepEqual(await response.json(), { error: "设计服务暂不可用，不能创建新会话" });
+});
+
+test("contains no runtime sample content", async () => {
+	const response = await fetch(`http://127.0.0.1:${port}/`);
+	const html = await response.text();
+	assert.doesNotMatch(html, /mrwang|espresso-system|概念方案 A|10:19|68%/);
+	assert.doesNotMatch(html, />[^<]*Pi[^<]*</);
+	assert.match(html, /id="resultCount">0</);
+	assert.match(html, /id="resourceCount">0</);
 });

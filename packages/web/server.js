@@ -1,5 +1,6 @@
 import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -15,7 +16,7 @@ const pending = new Map();
 let rpcProcess;
 let rpcBuffer = "";
 let requestSequence = 0;
-let mockTimers = [];
+const systemPrompt = "You are Jonwork, an industrial design assistant. Speak only from the product user's perspective and never mention Pi, RPC, CLI, OpenRouter, providers, credentials, backend implementation, or other infrastructure. Never claim that an image, file, research result, or tool output exists unless a tool actually produced it in this turn. For image or concept-render requests, use codemode image generation when an available image model exists. If image generation is unavailable, state only that image generation is currently unavailable and still provide a useful text design specification.";
 
 const mimeTypes = {
 	".css": "text/css; charset=utf-8",
@@ -52,7 +53,7 @@ async function startPi() {
 	if (rpcProcess) return true;
 	const resolved = resolvePiCommand();
 	if (!resolved) return false;
-	rpcProcess = spawn(resolved.command, [...resolved.args, "--mode", "rpc", "--no-session"], {
+	rpcProcess = spawn(resolved.command, [...resolved.args, "--mode", "rpc", "--no-session", "--tools", "+codemode", "--append-system-prompt", systemPrompt], {
 		cwd: process.env.PI_WORKING_DIRECTORY || process.cwd(),
 		stdio: ["pipe", "pipe", "pipe"],
 	});
@@ -67,7 +68,7 @@ async function startPi() {
 			try {
 				handleRpcRecord(JSON.parse(line));
 			} catch (error) {
-				emit("gateway_error", { message: `Pi 返回了无效数据：${error.message}` });
+				emit("gateway_error", { message: `设计服务返回了无效数据：${error.message}` });
 			}
 		}
 	});
@@ -87,7 +88,7 @@ async function sendRpc(command) {
 	return new Promise((resolve, reject) => {
 		const timeout = setTimeout(() => {
 			pending.delete(id);
-			reject(new Error("Pi RPC 请求超时"));
+			reject(new Error("设计服务响应超时"));
 		}, 15000);
 		pending.set(id, (response) => {
 			clearTimeout(timeout);
@@ -103,24 +104,14 @@ async function sendExtensionResponse(response) {
 	return true;
 }
 
-function clearMockTimers() {
-	for (const timer of mockTimers) clearTimeout(timer);
-	mockTimers = [];
-}
-
-function runMock(message) {
-	clearMockTimers();
-	const steps = [
-		[500, "run_started", { title: message.slice(0, 36), startedAt: Date.now() }],
-		[900, "step", { index: 0, status: "done", detail: "已提取场景、尺寸与体验目标" }],
-		[1500, "step", { index: 1, status: "done", detail: "完成 8 个竞品特征归纳" }],
-		[2100, "step", { index: 2, status: "done", detail: "确定模块化、便携、专业萃取" }],
-		[2300, "step", { index: 3, status: "running", detail: "正在生成产品概念图…", progress: 24 }],
-		[3000, "tool", { name: "AI 图像生成", elapsed: "00:00:18", prompt: "模块化便携式意式咖啡机，户外场景，极简工业设计，金属质感" }],
-		[3900, "step", { index: 3, status: "running", detail: "概念图细节渲染中…", progress: 68 }],
-		[4700, "permission", { title: "需要访问素材库", description: "为保证 CMF 建议准确，需要读取当前项目的材质样本（仅用于本次任务分析）。" }],
-	];
-	mockTimers = steps.map(([delay, event, payload]) => setTimeout(() => emit(event, payload), delay));
+function hasImageGeneration() {
+	if (process.env.OPENROUTER_API_KEY) return true;
+	try {
+		const auth = JSON.parse(readFileSync(join(homedir(), ".pi/agent/auth.json"), "utf8"));
+		return Boolean(auth.openrouter);
+	} catch {
+		return false;
+	}
 }
 
 async function readJson(request) {
@@ -166,26 +157,27 @@ const server = createServer(async (request, response) => {
 				"content-type": "text/event-stream",
 			});
 			clients.add(response);
-			response.write(`event: connection\ndata: ${JSON.stringify({ connected: Boolean(rpcProcess), mode: resolvePiCommand() ? "rpc-ready" : "demo", detail: resolvePiCommand() ? "Pi 可连接" : "演示模式：构建 Pi CLI 或设置 PI_CLI_PATH 后自动连接" })}\n\n`);
+			response.write(`event: connection\ndata: ${JSON.stringify({ connected: Boolean(rpcProcess), mode: resolvePiCommand() ? "rpc-ready" : "unavailable", detail: resolvePiCommand() ? "Pi 可连接" : "Pi CLI 不可用" })}\n\n`);
 			request.on("close", () => clients.delete(response));
 			return;
 		}
 		if (request.method === "POST" && url.pathname === "/api/prompt") {
 			const body = await readJson(request);
 			if (typeof body.message !== "string" || !body.message.trim()) return json(response, 400, { error: "请输入任务" });
-			if (body.thinking) await sendRpc({ type: "set_thinking_level", level: "high" });
+			const thinkingResponse = await sendRpc({ type: "set_thinking_level", level: body.thinking ? "high" : "off" });
+			if (!thinkingResponse) return json(response, 503, { error: "设计服务暂不可用，请稍后重试" });
 			const images = Array.isArray(body.images)
 				? body.images.filter((image) => image && image.type === "image" && typeof image.data === "string" && /^image\/(png|jpeg|webp)$/.test(image.mimeType)).slice(0, 4)
 				: undefined;
 			const rpcResponse = await sendRpc({ type: "prompt", message: body.message.trim(), ...(images?.length ? { images } : {}) });
-			if (!rpcResponse) runMock(body.message.trim());
-			return json(response, 202, { accepted: true, mode: rpcResponse ? "rpc" : "demo" });
+			if (!rpcResponse) return json(response, 503, { error: "设计服务暂不可用，请稍后重试" });
+			return json(response, 202, { accepted: true, mode: "rpc", imageGeneration: hasImageGeneration() });
 		}
 		if (request.method === "POST" && url.pathname === "/api/abort") {
-			clearMockTimers();
 			const rpcResponse = await sendRpc({ type: "abort" });
+			if (!rpcResponse) return json(response, 503, { error: "设计服务暂不可用，请稍后重试" });
 			emit("aborted", { at: Date.now() });
-			return json(response, 200, { stopped: true, mode: rpcResponse ? "rpc" : "demo" });
+			return json(response, 200, { stopped: true, mode: "rpc" });
 		}
 		if (request.method === "POST" && url.pathname === "/api/permission") {
 			const body = await readJson(request);
@@ -197,19 +189,26 @@ const server = createServer(async (request, response) => {
 			return json(response, 200, { ok: true });
 		}
 		if (request.method === "POST" && url.pathname === "/api/session/new") {
-			clearMockTimers();
 			const rpcResponse = await sendRpc({ type: "new_session" });
-			if (rpcResponse && rpcResponse.success === false) return json(response, 409, { error: rpcResponse.error || "Pi 无法创建新会话" });
-			if (rpcResponse?.data?.cancelled) return json(response, 409, { error: "Pi 扩展取消了新会话" });
+			if (!rpcResponse) return json(response, 503, { error: "设计服务暂不可用，不能创建新会话" });
+			if (rpcResponse && rpcResponse.success === false) return json(response, 409, { error: rpcResponse.error || "暂时无法创建新会话" });
+			if (rpcResponse?.data?.cancelled) return json(response, 409, { error: "新会话已取消" });
 			emit("session_created", { at: Date.now() });
-			return json(response, 201, { created: true, mode: rpcResponse ? "rpc" : "demo" });
+			return json(response, 201, { created: true, mode: "rpc" });
 		}
 		if (request.method === "GET" && url.pathname === "/api/state") {
 			const rpcResponse = await sendRpc({ type: "get_state" });
-			return json(response, 200, rpcResponse?.data || { mode: "demo" });
+			if (!rpcResponse) return json(response, 503, { error: "设计服务暂不可用，请稍后重试" });
+			return json(response, 200, rpcResponse.data);
+		}
+		if (request.method === "POST" && url.pathname === "/api/model/cycle") {
+			const rpcResponse = await sendRpc({ type: "cycle_model" });
+			if (!rpcResponse) return json(response, 503, { error: "设计服务暂不可用，请稍后重试" });
+			if (rpcResponse.success === false) return json(response, 409, { error: rpcResponse.error || "无法切换模型" });
+			return json(response, 200, rpcResponse.data || { model: null });
 		}
 		if (request.method === "GET" && url.pathname === "/api/health") {
-			return json(response, 200, { ok: true, pi: resolvePiCommand() ? "available" : "demo" });
+			return json(response, 200, { ok: true, pi: resolvePiCommand() ? "available" : "unavailable", imageGeneration: hasImageGeneration() });
 		}
 		if (request.method === "GET" && serveFile(url.pathname, response)) return;
 		json(response, 404, { error: "Not found" });
@@ -224,7 +223,6 @@ server.listen(port, host, () => {
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
 	process.on(signal, () => {
-		clearMockTimers();
 		rpcProcess?.stdin.end();
 		server.close(() => process.exit(0));
 	});
