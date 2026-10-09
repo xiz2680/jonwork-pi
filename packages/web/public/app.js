@@ -13,7 +13,7 @@ const elements = {
 	connection: document.querySelector(".connection"),
 	connectionLabel: document.querySelector("#connectionLabel"),
 	runStatus: document.querySelector("#runStatus"),
-	assistantText: document.querySelector("#assistantText"),
+	messageScroll: document.querySelector("#messageScroll"),
 	toast: document.querySelector("#toast"),
 	attachmentList: document.querySelector("#attachmentList"),
 	fileInput: document.querySelector("#fileInput"),
@@ -35,7 +35,70 @@ function setRunning(running) {
 	isRunning = running;
 	elements.send.classList.toggle("running", running);
 	elements.send.innerHTML = `<iconify-icon icon="${running ? "solar:stop-bold" : "solar:arrow-up-linear"}"></iconify-icon>`;
-	elements.runStatus.textContent = running ? "运行中" : "已停止";
+	elements.runStatus.textContent = running ? "运行中" : "空闲";
+	elements.stop.disabled = !running;
+}
+
+function currentTime() {
+	return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+}
+
+function removeEmptyState() {
+	document.querySelector("#emptyConversation")?.remove();
+}
+
+function appendMessage(role, text = "") {
+	removeEmptyState();
+	const article = document.createElement("article");
+	article.className = `message ${role}-message`;
+	const avatar = document.createElement("div");
+	avatar.className = `avatar ${role === "user" ? "user-avatar" : "ai-avatar"}`;
+	avatar.textContent = role === "user" ? "本" : "J";
+	const body = document.createElement("div");
+	body.className = "message-body";
+	const meta = document.createElement("div");
+	meta.className = "message-meta";
+	const author = document.createElement("strong");
+	author.textContent = role === "user" ? "我" : "Jonwork";
+	const time = document.createElement("time");
+	time.textContent = currentTime();
+	meta.append(author, time);
+	const content = document.createElement(role === "user" ? "div" : "p");
+	content.className = role === "user" ? "user-bubble" : "assistant-text";
+	content.textContent = text;
+	body.append(meta, content);
+	article.append(avatar, body);
+	elements.messageScroll.append(article);
+	elements.messageScroll.scrollTop = elements.messageScroll.scrollHeight;
+	return content;
+}
+
+function resetConversation() {
+	elements.messageScroll.replaceChildren();
+	const empty = document.createElement("div");
+	empty.className = "empty-conversation";
+	empty.id = "emptyConversation";
+	empty.innerHTML = '<span class="ai-avatar avatar">J</span><h2>今天想设计什么？</h2><p>输入任务后，Jonwork 会通过 Pi 完成分析、工具调用和方案输出。</p>';
+	elements.messageScroll.append(empty);
+	document.querySelector(".conversation-header h1").textContent = "新对话";
+	document.querySelector("#runTitle").textContent = "等待任务";
+	document.querySelector("#elapsed").textContent = "00:00";
+	elements.progress.style.width = "0";
+	elements.progressCount.textContent = "0 / 6";
+	elements.permission.classList.add("resolved");
+	document.querySelector("#steps").hidden = true;
+	setRunning(false);
+}
+
+function addHistoryItem(title) {
+	const list = document.querySelector("#historyList");
+	list.querySelector(".history-empty")?.remove();
+	list.querySelectorAll(".history-item").forEach((item) => item.classList.remove("selected"));
+	const button = document.createElement("button");
+	button.className = "history-item selected";
+	button.innerHTML = `<iconify-icon icon="solar:chat-round-linear"></iconify-icon><span><strong></strong><small>刚刚</small></span>`;
+	button.querySelector("strong").textContent = title;
+	list.prepend(button);
 }
 
 async function post(path, body = {}) {
@@ -72,7 +135,8 @@ function handlePiEvent(record) {
 	}
 	if (record.type === "message_update" && record.assistantMessageEvent?.type === "text_delta") {
 		streamedText += record.assistantMessageEvent.delta;
-		elements.assistantText.textContent = streamedText;
+		const target = [...document.querySelectorAll(".assistant-text")].at(-1) || appendMessage("assistant");
+		target.textContent = streamedText;
 	}
 	if (record.type === "extension_ui_request") {
 		if (record.method === "notify") return showToast(record.message);
@@ -131,6 +195,13 @@ elements.composer.addEventListener("submit", async (event) => {
 	const message = elements.prompt.value.trim();
 	if (!message) return elements.prompt.focus();
 	streamedText = "";
+	appendMessage("user", message);
+	appendMessage("assistant", "正在思考…");
+	const title = message.slice(0, 22);
+	document.querySelector(".conversation-header h1").textContent = title;
+	document.querySelector("#runTitle").textContent = title;
+	document.querySelector("#steps").hidden = false;
+	if (!document.querySelector("#historyList .history-item.selected")) addHistoryItem(title);
 	setRunning(true);
 	try {
 		const result = await post("/api/prompt", { message, thinking: document.querySelector("#thinkingToggle").checked, images: attachments });
@@ -172,7 +243,7 @@ elements.permission.addEventListener("click", async (event) => {
 	await post("/api/permission", { id: pendingPermission?.id, method: pendingPermission?.method, allowed, value, cancelled: !allowed && pendingPermission?.method !== "confirm" });
 	pendingPermission = null;
 });
-document.querySelector("#openRunPanel").addEventListener("click", () => elements.runPanel.classList.add("open"));
+document.querySelector("#openRunPanel")?.addEventListener("click", () => elements.runPanel.classList.add("open"));
 document.querySelector("#closePanel").addEventListener("click", () => elements.runPanel.classList.remove("open"));
 document.querySelector("#mobileMenu").addEventListener("click", () => document.querySelector("#sidebar").classList.add("open"));
 document.querySelector("#collapseButton").addEventListener("click", () => document.querySelector("#sidebar").classList.remove("open"));
@@ -185,7 +256,7 @@ document.querySelector("#shareButton").addEventListener("click", async () => {
 		showToast("浏览器未允许复制，请从地址栏复制");
 	}
 });
-document.querySelector("#zoomButton").addEventListener("click", () => document.querySelector("#imageDialog").showModal());
+document.querySelector("#zoomButton")?.addEventListener("click", () => document.querySelector("#imageDialog").showModal());
 document.querySelector("#closeImage").addEventListener("click", () => document.querySelector("#imageDialog").close());
 document.querySelectorAll(".suggestions button").forEach((button) => button.addEventListener("click", () => {
 	elements.prompt.value = `${button.textContent}：请基于当前方案继续，并给出可执行的下一步。`;
@@ -252,13 +323,33 @@ document.querySelectorAll(".primary-nav .nav-item:not(.active), .sidebar-footer 
 	event.preventDefault();
 	showToast("该模块不在当前对话工作台里程碑范围内");
 }));
-document.querySelector(".section-label button").addEventListener("click", () => {
-	elements.prompt.value = "";
-	elements.assistantText.textContent = "新对话已就绪，请输入你的设计任务。";
-	elements.prompt.focus();
-	showToast("已新建本地对话");
+document.querySelectorAll(".primary-nav .nav-item:not(.active), .sidebar-footer .nav-item").forEach((item) => {
+	item.classList.add("unavailable");
+	item.setAttribute("aria-disabled", "true");
+	if (!item.querySelector("small")) {
+		const status = document.createElement("small");
+		status.textContent = "规划中";
+		item.append(status);
+	}
 });
-document.querySelectorAll(".history-item").forEach((item) => item.addEventListener("click", () => {
+document.querySelector("#newConversationButton").addEventListener("click", async () => {
+	try {
+		await post("/api/session/new");
+		resetConversation();
+		addHistoryItem("新对话");
+		elements.prompt.value = "";
+		elements.prompt.focus();
+		showToast("已创建新的 Pi 会话");
+	} catch (error) {
+		showToast(error.message);
+	}
+});
+document.querySelector("#historyList").addEventListener("click", (event) => {
+	const item = event.target.closest(".history-item");
+	if (!item) return;
 	document.querySelectorAll(".history-item").forEach((entry) => entry.classList.toggle("selected", entry === item));
 	document.querySelector(".conversation-header h1").textContent = item.querySelector("strong").textContent;
-}));
+});
+
+document.querySelector("#steps").hidden = true;
+setRunning(false);

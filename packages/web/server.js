@@ -196,6 +196,14 @@ const server = createServer(async (request, response) => {
 			emit("permission_resolved", { allowed: Boolean(body.allowed) });
 			return json(response, 200, { ok: true });
 		}
+		if (request.method === "POST" && url.pathname === "/api/session/new") {
+			clearMockTimers();
+			const rpcResponse = await sendRpc({ type: "new_session" });
+			if (rpcResponse && rpcResponse.success === false) return json(response, 409, { error: rpcResponse.error || "Pi 无法创建新会话" });
+			if (rpcResponse?.data?.cancelled) return json(response, 409, { error: "Pi 扩展取消了新会话" });
+			emit("session_created", { at: Date.now() });
+			return json(response, 201, { created: true, mode: rpcResponse ? "rpc" : "demo" });
+		}
 		if (request.method === "GET" && url.pathname === "/api/state") {
 			const rpcResponse = await sendRpc({ type: "get_state" });
 			return json(response, 200, rpcResponse?.data || { mode: "demo" });

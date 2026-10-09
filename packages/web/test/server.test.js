@@ -47,3 +47,9 @@ test("accepts a prompt in explicit demo mode", async () => {
 	});
 	assert.deepEqual(await response.json(), { accepted: true, mode: "demo" });
 });
+
+test("creates a fresh session in explicit demo mode", async () => {
+	const response = await fetch(`http://127.0.0.1:${port}/api/session/new`, { method: "POST" });
+	assert.equal(response.status, 201);
+	assert.deepEqual(await response.json(), { created: true, mode: "demo" });
+});
