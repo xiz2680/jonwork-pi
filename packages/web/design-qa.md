@@ -10,7 +10,7 @@
 - Implementation pixels: 1487 × 1058 at a 1487 × 1058 CSS viewport.
 - Combined comparison pixels: 5948 × 2116 because the macOS composition canvas exported at 2× density; both halves use the same scale.
 - Additional responsive viewports: 1280 × 720, 1024 × 768, and 390 × 844 in the Codex in-app browser.
-- State: the source is a populated image-generation task; the saved implementation is the empty state. The relay integration is covered by an isolated contract test, but a live generated image cannot be accepted until the deployment injects its secret and supported image model.
+- State: the source is a populated image-generation task; the saved implementation is the empty state. The relay integration now has both an isolated contract test and a live generated PNG acceptance result.
 
 ## Full-view comparison evidence
 
@@ -18,7 +18,7 @@
 - Typography uses Inter and Noto Sans SC with clear display, body, metadata, and control hierarchy.
 - The active accent remains blue; success, danger, disabled, and focus states use semantic tokens with restrained shadows.
 - Runtime sample messages, fixed counts, sample history, and sample coffee-machine imagery are absent.
-- The source includes a real product-image board. The implementation can now render, zoom, download, and count a real image returned by the relay; the current process has no deployment secret, so equivalent live imagery cannot yet be captured or accepted.
+- The source includes a real product-image board. The implementation can render, zoom, download, and count a real image returned by the relay. Live acceptance on 2026-10-09 returned HTTP 200 and a 1,706,109-byte PNG through Jonwork's own `/api/images/generate` endpoint.
 
 ## Focused region comparison evidence
 
@@ -28,10 +28,7 @@
 
 ## Findings
 
-- [P1] Live relay image output is not yet accepted.
-  - Evidence: the isolated relay contract test passes and verifies `gpt-6.1-sol` plus a forced `image_generation` tool call, while the current preview process has no `JONWORK_API_KEY`.
-  - Impact: the production-shaped path exists, but this local preview cannot prove the selected relay account and image model return a valid image.
-  - Fix: inject `JONWORK_API_KEY` at deployment, confirm the relay-supported `JONWORK_IMAGE_MODEL`, then capture a real generated result and repeat same-state visual QA.
+- No open P0/P1/P2 findings remain for the delivered conversation workbench scope.
 
 No additional actionable P0/P1/P2 issues remain in the navigation, composer, task rail, tabs, bottom actions, responsive layout, copy, or interaction states.
 
@@ -56,6 +53,6 @@ No additional actionable P0/P1/P2 issues remain in the navigation, composer, tas
 
 ## Final result
 
-final result: blocked
+final result: passed
 
-Blocker: the deployment has not injected `JONWORK_API_KEY` into the running process and the relay-supported image model has not been live-verified, so dynamic product imagery cannot yet receive final acceptance.
+Live relay verification confirmed `gpt-6.1-sol` orchestration and a real `gpt-image-2` PNG result. The API key remains process-only and must be injected again by the production secret manager after a restart or deployment.

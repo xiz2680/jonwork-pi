@@ -13,7 +13,7 @@ const port = Number(process.env.PORT || (portArgument >= 0 ? process.argv[portAr
 const host = process.env.HOST || (hostArgument >= 0 ? process.argv[hostArgument + 1] : "127.0.0.1");
 const relayBaseUrl = (process.env.JONWORK_API_BASE_URL || "https://newapi.rivarouter.com/v1").replace(/\/$/, "");
 const relayChatModel = process.env.JONWORK_CHAT_MODEL || "gpt-6.1-sol";
-const relayImageModel = process.env.JONWORK_IMAGE_MODEL || "gpt-image-1";
+const relayImageModel = process.env.JONWORK_IMAGE_MODEL || "gpt-image-2";
 const clients = new Set();
 const pending = new Map();
 let rpcProcess;

@@ -63,7 +63,7 @@ npm run dev --workspace=@jonwork/pi-web -- --host 127.0.0.1 --port 4318
 export JONWORK_API_BASE_URL="https://newapi.rivarouter.com/v1"
 export JONWORK_API_KEY="由部署平台注入的密钥"
 export JONWORK_CHAT_MODEL="gpt-6.1-sol"
-export JONWORK_IMAGE_MODEL="gpt-image-1"
+export JONWORK_IMAGE_MODEL="gpt-image-2"
 npm run start --workspace=@jonwork/pi-web -- --host 127.0.0.1 --port 4318
 ```
 

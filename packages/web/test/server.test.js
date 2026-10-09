@@ -111,6 +111,7 @@ test("uses gpt-6.1-sol to orchestrate relay image generation", async () => {
 		assert.equal(relayRequest.authorization, "Bearer test-only-key");
 		assert.equal(relayRequest.body.model, "gpt-6.1-sol");
 		assert.equal(relayRequest.body.tools[0].type, "image_generation");
+		assert.equal(relayRequest.body.tools[0].model, "gpt-image-2");
 		assert.deepEqual(relayRequest.body.tool_choice, { type: "image_generation" });
 	} finally {
 		relayApp.kill("SIGTERM");
