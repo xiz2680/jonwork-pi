@@ -118,6 +118,33 @@ function recordResult(text) {
 	updateTabCounts();
 }
 
+function wantsImage(text) {
+	return /图|图片|效果图|概念图|渲染|视觉|image|render/i.test(text);
+}
+
+function appendGeneratedImage(image) {
+	if (!image || typeof image.data !== "string" || typeof image.mimeType !== "string") return;
+	const key = `${image.mimeType}:${image.data.length}:${image.data.slice(0, 24)}`;
+	if (renderedImages.has(key)) return;
+	renderedImages.add(key);
+	const body = [...document.querySelectorAll(".assistant-message .message-body")].at(-1);
+	if (!body) return;
+	const imageNumber = sessionResources.filter((item) => item.type === "image").length + 1;
+	const figure = document.createElement("figure");
+	figure.className = "result-figure generated-result";
+	const element = document.createElement("img");
+	element.src = `data:${image.mimeType};base64,${image.data}`;
+	element.alt = image.revisedPrompt || "根据当前会话动态生成的设计图";
+	const caption = document.createElement("figcaption");
+	caption.innerHTML = '<span><iconify-icon icon="solar:gallery-check-linear"></iconify-icon>本次会话生成的设计图</span><span class="figure-actions"><button class="icon-button download-generated" aria-label="下载图片" title="下载图片"><iconify-icon icon="solar:download-minimalistic-linear"></iconify-icon></button><button class="icon-button zoom-generated" aria-label="放大查看" title="放大查看"><iconify-icon icon="solar:maximize-square-minimalistic-linear"></iconify-icon></button></span>';
+	figure.append(element, caption);
+	body.append(figure);
+	sessionResources.push({ type: "image", name: `生成设计图 ${imageNumber}` });
+	sessionResults.push(`图片：生成设计图 ${imageNumber}`);
+	updateTabCounts();
+	elements.messageScroll.scrollTo({ top: elements.messageScroll.scrollHeight, behavior: "smooth" });
+}
+
 function renderImagesFromMessages(messages) {
 	const images = [];
 	const visit = (value) => {
@@ -127,24 +154,21 @@ function renderImagesFromMessages(messages) {
 		else Object.values(value).forEach(visit);
 	};
 	visit(messages);
-	const body = [...document.querySelectorAll(".assistant-message .message-body")].at(-1);
-	if (!body) return;
-	for (const image of images) {
-		const key = `${image.mimeType}:${image.data.length}:${image.data.slice(0, 24)}`;
-		if (renderedImages.has(key)) continue;
-		renderedImages.add(key);
-		const figure = document.createElement("figure");
-		figure.className = "result-figure generated-result";
-		const element = document.createElement("img");
-		element.src = `data:${image.mimeType};base64,${image.data}`;
-		element.alt = "根据当前会话动态生成的设计图";
-		const caption = document.createElement("figcaption");
-		caption.innerHTML = '<span>本次会话生成的设计图</span><button class="icon-button zoom-generated" aria-label="放大查看"><iconify-icon icon="solar:maximize-square-minimalistic-linear"></iconify-icon></button>';
-		figure.append(element, caption);
-		body.append(figure);
-		sessionResources.push({ type: "image", name: `生成设计图 ${sessionResources.filter((item) => item.type === "image").length + 1}` });
+	images.forEach(appendGeneratedImage);
+}
+
+async function generateConversationImage(prompt) {
+	addRunStep("image-generation", "生成概念图", "正在生成真实设计图");
+	elements.runPanel.classList.add("open");
+	try {
+		const image = await post("/api/images/generate", { prompt });
+		appendGeneratedImage(image);
+		completeRunStep("image-generation", "设计图已生成");
+		showToast("设计图已生成，可放大或下载");
+	} catch (error) {
+		completeRunStep("image-generation", "生成失败，可稍后重试");
+		showToast(error.message);
 	}
-	updateTabCounts();
 }
 
 function resetRunSteps() {
@@ -385,8 +409,9 @@ function handlePiEvent(record) {
 	if (record.type === "extension_ui_request") {
 		if (record.method === "notify") return showToast(record.message);
 		if (record.method === "setTitle") document.querySelector(".conversation-header h1").textContent = record.title;
-		if (record.method === "set_editor_text") {
-			elements.prompt.value = record.text;
+			if (record.method === "set_editor_text") {
+				const editorText = String(record.text ?? "");
+				elements.prompt.value = /^[>›❯\s]+$/.test(editorText) ? "" : editorText;
 			resizePrompt();
 			updateSendAvailability();
 		}
@@ -456,7 +481,8 @@ elements.composer.addEventListener("submit", async (event) => {
 		updateSendAvailability();
 		attachments = [];
 		elements.attachmentList.replaceChildren();
-		showToast(!result.imageGeneration && /图|图片|效果图|渲染|视觉/.test(message) ? "设计任务已启动；当前暂不支持生成图片" : "设计任务已启动");
+		if (wantsImage(message) && result.relayImageGeneration) void generateConversationImage(message);
+		showToast(!result.imageGeneration && wantsImage(message) ? "设计任务已启动；当前暂不支持生成图片" : "设计任务已启动");
 	} catch (error) {
 		setRunning(false);
 		showToast(error.message);
@@ -634,11 +660,38 @@ document.querySelector("#historyList").addEventListener("click", (event) => {
 });
 
 elements.messageScroll.addEventListener("click", (event) => {
+	const download = event.target.closest(".download-generated");
+	if (download) {
+		const image = download.closest("figure").querySelector("img");
+		const link = document.createElement("a");
+		link.href = image.src;
+		link.download = `jonwork-design-${Date.now()}.png`;
+		link.click();
+		return;
+	}
 	const button = event.target.closest(".zoom-generated");
 	if (!button) return;
 	const image = button.closest("figure").querySelector("img");
 	document.querySelector("#dialogImage").src = image.src;
 	document.querySelector("#imageDialog").showModal();
+});
+
+document.querySelector(".quick-nav").addEventListener("click", (event) => {
+	const action = event.target.closest("[data-quick-action]")?.dataset.quickAction;
+	if (!action) return;
+	if (action === "new") document.querySelector("#newConversationButton").click();
+	if (action === "attach") document.querySelector("#attachButton").click();
+	if (action === "image") {
+		elements.prompt.value = "基于当前会话生成一张专业的工业设计产品概念图，展示整体外观、关键模块和真实使用场景。";
+		resizePrompt();
+		updateSendAvailability();
+		elements.prompt.focus();
+	}
+	if (action === "results") {
+		document.querySelector('[data-tab="results"]').click();
+		elements.runPanel.classList.add("open");
+	}
+	document.querySelector("#sidebar").classList.remove("open");
 });
 
 document.querySelector("#steps").hidden = true;

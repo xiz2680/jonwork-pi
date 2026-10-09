@@ -11,6 +11,9 @@ const portArgument = process.argv.findIndex((value) => value === "--port");
 const hostArgument = process.argv.findIndex((value) => value === "--host");
 const port = Number(process.env.PORT || (portArgument >= 0 ? process.argv[portArgument + 1] : 4318));
 const host = process.env.HOST || (hostArgument >= 0 ? process.argv[hostArgument + 1] : "127.0.0.1");
+const relayBaseUrl = (process.env.JONWORK_API_BASE_URL || "https://newapi.rivarouter.com/v1").replace(/\/$/, "");
+const relayChatModel = process.env.JONWORK_CHAT_MODEL || "gpt-6.1-sol";
+const relayImageModel = process.env.JONWORK_IMAGE_MODEL || "gpt-image-1";
 const clients = new Set();
 const pending = new Map();
 let rpcProcess;
@@ -105,12 +108,45 @@ async function sendExtensionResponse(response) {
 }
 
 function hasImageGeneration() {
+	if (process.env.JONWORK_API_KEY) return true;
 	if (process.env.OPENROUTER_API_KEY) return true;
 	try {
 		const auth = JSON.parse(readFileSync(join(homedir(), ".pi/agent/auth.json"), "utf8"));
 		return Boolean(auth.openrouter);
 	} catch {
 		return false;
+	}
+}
+
+async function generateRelayImage(prompt) {
+	if (!process.env.JONWORK_API_KEY) throw new Error("图片生成服务尚未配置");
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), 180_000);
+	try {
+		const relayResponse = await fetch(`${relayBaseUrl}/responses`, {
+			method: "POST",
+			headers: {
+				authorization: `Bearer ${process.env.JONWORK_API_KEY}`,
+				"content-type": "application/json",
+			},
+			body: JSON.stringify({
+				model: relayChatModel,
+				input: prompt,
+				tools: [{ type: "image_generation", model: relayImageModel, size: "1536x1024", quality: "high", output_format: "png" }],
+				tool_choice: { type: "image_generation" },
+			}),
+			signal: controller.signal,
+		});
+		if (!relayResponse.ok) throw new Error(`图片服务请求失败（${relayResponse.status}）`);
+		const payload = await relayResponse.json();
+		const output = Array.isArray(payload.output) ? payload.output.find((item) => item?.type === "image_generation_call" && typeof item.result === "string") : undefined;
+		if (!output) throw new Error("图片服务未返回有效图片");
+		return { data: output.result, mimeType: "image/png", revisedPrompt: output.revised_prompt || prompt };
+	} catch (error) {
+		if (error?.name === "AbortError") throw new Error("图片生成超时，请稍后重试");
+		throw error;
+	} finally {
+		clearTimeout(timeout);
 	}
 }
 
@@ -171,7 +207,14 @@ const server = createServer(async (request, response) => {
 				: undefined;
 			const rpcResponse = await sendRpc({ type: "prompt", message: body.message.trim(), ...(images?.length ? { images } : {}) });
 			if (!rpcResponse) return json(response, 503, { error: "设计服务暂不可用，请稍后重试" });
-			return json(response, 202, { accepted: true, mode: "rpc", imageGeneration: hasImageGeneration() });
+			return json(response, 202, { accepted: true, mode: "rpc", imageGeneration: hasImageGeneration(), relayImageGeneration: Boolean(process.env.JONWORK_API_KEY) });
+		}
+		if (request.method === "POST" && url.pathname === "/api/images/generate") {
+			const body = await readJson(request);
+			if (typeof body.prompt !== "string" || !body.prompt.trim()) return json(response, 400, { error: "请输入图片设计要求" });
+			if (!process.env.JONWORK_API_KEY) return json(response, 503, { error: "图片生成服务尚未配置" });
+			const image = await generateRelayImage(body.prompt.trim());
+			return json(response, 200, image);
 		}
 		if (request.method === "POST" && url.pathname === "/api/abort") {
 			const rpcResponse = await sendRpc({ type: "abort" });
@@ -208,7 +251,7 @@ const server = createServer(async (request, response) => {
 			return json(response, 200, rpcResponse.data || { model: null });
 		}
 		if (request.method === "GET" && url.pathname === "/api/health") {
-			return json(response, 200, { ok: true, pi: resolvePiCommand() ? "available" : "unavailable", imageGeneration: hasImageGeneration() });
+			return json(response, 200, { ok: true, pi: resolvePiCommand() ? "available" : "unavailable", imageGeneration: hasImageGeneration(), relayImageGeneration: Boolean(process.env.JONWORK_API_KEY), chatModel: relayChatModel });
 		}
 		if (request.method === "GET" && serveFile(url.pathname, response)) return;
 		json(response, 404, { error: "Not found" });

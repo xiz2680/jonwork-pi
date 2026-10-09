@@ -83,8 +83,18 @@ button:disabled,[aria-disabled="true"]{cursor:not-allowed;opacity:.46}
 .attachment-list span{border:1px solid #dce6fa;background:#f3f7ff}
 .result-figure{border:1px solid #e1e5ea;box-shadow:var(--shadow-card);background:#f2f4f6}
 .result-figure img{aspect-ratio:auto;max-height:640px;object-fit:contain;background:#eef0f3}
+.result-figure figcaption>span{display:flex;align-items:center;gap:7px}.result-figure figcaption>span:first-child iconify-icon{font-size:16px;color:#2d67d7}.figure-actions{margin-left:auto;gap:2px!important}.figure-actions .icon-button{width:30px;height:30px}
 .image-dialog{box-shadow:0 30px 90px rgba(9,14,23,.30)}
 .toast{box-shadow:0 14px 34px rgba(11,15,22,.22);border:1px solid rgba(255,255,255,.08)}
+.quick-nav{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.quick-nav .section-label small{font-size:10px;color:#a4a9b1}
+.quick-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:4px 6px 0}
+.quick-grid button{min-width:0;height:58px;padding:8px;border:1px solid #e7e9ed;border-radius:11px;background:rgba(255,255,255,.72);display:grid;grid-template-columns:26px 1fr;align-items:center;gap:7px;text-align:left;color:#454b54;cursor:pointer;box-shadow:0 1px 2px rgba(18,24,32,.025);transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease,background .16s ease}
+.quick-grid button span{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:#f0f4fb;color:#3769c7;font-size:16px}
+.quick-grid button b{font-size:11px;line-height:1.3;font-weight:600}
+.quick-grid button:hover{background:#fff;border-color:#d8dde5;box-shadow:0 5px 15px rgba(18,24,32,.06);transform:translateY(-1px)}
+.quick-grid button:focus-visible{outline:3px solid rgba(37,99,235,.15);outline-offset:1px}
+.history{margin-top:16px}
 @media(max-width:1180px){.run-panel-trigger{display:flex}.run-panel{position:fixed;right:0;top:0;bottom:0;width:min(430px,92vw);z-index:20}}
 @media(max-width:760px){.run-panel-trigger{width:34px;padding:0;justify-content:center}.run-panel-trigger span{display:none}}
 @media(max-width:760px){.composer-hint{display:none}}

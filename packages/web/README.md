@@ -12,6 +12,7 @@ flowchart LR
   G -->|SSE| U
   P --> M[模型提供商]
   P --> T[工具 / 扩展 / 工作区]
+  G -->|Responses API + image_generation| R[OpenAI 兼容中转站]
 ```
 
 ## 启动流程
@@ -55,6 +56,18 @@ npm run dev --workspace=@jonwork/pi-web -- --host 127.0.0.1 --port 4318
 默认身份是“本地用户 / 未登录”。它不是企业账号，也不会伪造用户资料；接入企业 SSO 后应由认证会话覆盖该显示。
 
 图像产出必须来自当前会话中的真实 Pi 图像工具调用。当前 Pi 图像模型通过 OpenRouter 提供；配置 `OPENROUTER_API_KEY` 或完成 Pi 的 OpenRouter 登录后，设计请求可使用 `codemode` 生成图片。未配置时界面会明确显示能力不可用，不会使用样例图替代。
+
+也可以通过服务端环境变量接入支持 Responses API `image_generation` 工具的 OpenAI 兼容中转站。密钥只允许注入服务端环境，不得写入前端、仓库或日志：
+
+```bash
+export JONWORK_API_BASE_URL="https://newapi.rivarouter.com/v1"
+export JONWORK_API_KEY="由部署平台注入的密钥"
+export JONWORK_CHAT_MODEL="gpt-6.1-sol"
+export JONWORK_IMAGE_MODEL="gpt-image-1"
+npm run start --workspace=@jonwork/pi-web -- --host 127.0.0.1 --port 4318
+```
+
+其中 `gpt-6.1-sol` 负责理解请求和编排图片工具，`JONWORK_IMAGE_MODEL` 必须填写中转站实际支持的图片模型。中转站若不支持 Responses API 的 `image_generation` 工具，仅配置文本模型也无法生成图片。
 
 ## 验证
 
