@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="theme-color" content="#f8f9fb" />
+		<title>Jonwork · AI 工业设计协作平台</title>
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+		<script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+		<link rel="stylesheet" href="/styles.css" />
+	</head>
+	<body>
+		<div class="app-shell">
+			<aside class="sidebar" id="sidebar">
+				<div class="brand-row"><div class="brand">Jonwork</div><button class="icon-button" id="collapseButton" aria-label="收起侧栏"><iconify-icon icon="solar:sidebar-minimalistic-linear"></iconify-icon></button></div>
+				<nav class="primary-nav" aria-label="主导航">
+					<a class="nav-item active" href="#"><iconify-icon icon="solar:home-2-linear"></iconify-icon><span>主页</span></a>
+					<a class="nav-item unavailable" href="#" aria-disabled="true"><iconify-icon icon="solar:cursor-square-linear"></iconify-icon><span>无限画布</span><small>规划中</small></a>
+					<a class="nav-item" href="#"><iconify-icon icon="solar:scanner-2-linear"></iconify-icon><span>产品调研</span><iconify-icon class="chevron" icon="solar:alt-arrow-right-linear"></iconify-icon></a>
+					<a class="nav-item" href="#"><iconify-icon icon="solar:widget-3-linear"></iconify-icon><span>造型工作台</span><iconify-icon class="chevron" icon="solar:alt-arrow-right-linear"></iconify-icon></a>
+					<a class="nav-item" href="#"><iconify-icon icon="solar:palette-linear"></iconify-icon><span>设计实验室</span><iconify-icon class="chevron" icon="solar:alt-arrow-right-linear"></iconify-icon></a>
+					<a class="nav-item" href="#"><iconify-icon icon="solar:clipboard-check-linear"></iconify-icon><span>设计诊断</span><iconify-icon class="chevron" icon="solar:alt-arrow-right-linear"></iconify-icon></a>
+					<a class="nav-item" href="#"><iconify-icon icon="solar:folder-linear"></iconify-icon><span>项目资产</span></a>
+					<a class="nav-item" href="#"><iconify-icon icon="solar:gallery-wide-linear"></iconify-icon><span>素材库</span></a>
+					<a class="nav-item" href="#"><iconify-icon icon="solar:list-check-linear"></iconify-icon><span>任务队列</span></a>
+				</nav>
+				<section class="history"><div class="section-label"><span>最近对话</span><button class="icon-button" aria-label="新建对话"><iconify-icon icon="solar:add-circle-linear"></iconify-icon></button></div>
+					<button class="history-item selected"><iconify-icon icon="solar:chat-round-linear"></iconify-icon><span><strong>模块化便携式意式咖啡机</strong><small>今天 10:24</small></span></button>
+					<button class="history-item"><iconify-icon icon="solar:chat-round-linear"></iconify-icon><span><strong>户外装备产品线调研</strong><small>昨天 16:20</small></span></button>
+					<button class="history-item"><iconify-icon icon="solar:chat-round-linear"></iconify-icon><span><strong>家用咖啡机 CMF 探索</strong><small>10月7日</small></span></button>
+				</section>
+				<div class="sidebar-footer"><a class="nav-item" href="#"><iconify-icon icon="solar:brain-linear"></iconify-icon><span>记忆</span></a><a class="nav-item" href="#"><iconify-icon icon="solar:notebook-linear"></iconify-icon><span>知识中心</span></a><button class="profile"><span class="avatar small">王</span><span>mrwang</span><small>企业</small></button><button class="nav-item signout"><iconify-icon icon="solar:logout-2-linear"></iconify-icon><span>退出登录</span></button></div>
+			</aside>
+
+			<main class="conversation">
+				<header class="conversation-header"><button class="mobile-menu icon-button" id="mobileMenu" aria-label="打开菜单"><iconify-icon icon="solar:hamburger-menu-linear"></iconify-icon></button><div><h1>模块化便携式意式咖啡机</h1><p>从概念到可落地的产品方案</p></div><div class="header-actions"><span class="save-state"><iconify-icon icon="solar:check-circle-linear"></iconify-icon>本地会话</span><button class="soft-button" id="shareButton"><iconify-icon icon="solar:share-linear"></iconify-icon>分享</button></div></header>
+				<section class="message-scroll" id="messageScroll">
+					<article class="message user-message"><div class="avatar user-avatar">王</div><div class="message-body"><div class="message-meta"><strong>我</strong><time>10:18</time></div><div class="user-bubble">帮我设计一款模块化的便携式意式咖啡机，面向户外和差旅场景。<br />要求：模块化设计、现代简约工业设计语言、体积小巧便于携带，并生成产品概念图。</div></div></article>
+					<article class="message assistant-message"><div class="avatar ai-avatar">J</div><div class="message-body"><div class="message-meta"><strong>Jonwork</strong><time>10:19</time></div><p>好的，我会先调研市场与竞品，梳理设计方向，然后生成多版概念图并给出详细设计说明。</p><div class="created-task"><span><iconify-icon icon="solar:check-circle-bold"></iconify-icon><span><strong>已创建设计任务</strong><small>模块化便携式意式咖啡机 · 设计概念探索</small></span></span><button id="openRunPanel">在右侧查看运行过程 <iconify-icon icon="solar:arrow-right-linear"></iconify-icon></button></div></div></article>
+					<article class="message assistant-message"><div class="avatar ai-avatar">J</div><div class="message-body"><div class="message-meta"><strong>Jonwork</strong><time>10:24</time></div><p id="assistantText">已完成设计方案。我为你生成了模块化便携式意式咖啡机的完整设计方向，包含产品概念图、模块分解和关键体验说明。</p><figure class="result-figure"><img src="/espresso-system.png" alt="模块化便携式意式咖啡机设计概念" /><figcaption><span>模块化便携式意式咖啡机 · 概念方案 A</span><button class="icon-button" id="zoomButton" aria-label="放大查看"><iconify-icon icon="solar:maximize-square-minimalistic-linear"></iconify-icon></button></figcaption></figure><div class="suggestions"><button>方案说明</button><button>生成更多方案</button><button>调整风格</button><button>生成结构草图</button></div></div></article>
+				</section>
+				<form class="composer" id="composer"><div id="attachmentList" class="attachment-list" aria-live="polite"></div><textarea id="promptInput" aria-label="描述设计任务" placeholder="描述你的设计任务…" rows="1"></textarea><div class="composer-toolbar"><div><button type="button" class="composer-button" id="attachButton" aria-label="添加图片"><iconify-icon icon="solar:add-circle-linear"></iconify-icon></button><input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden /><button type="button" class="select-button" id="modeButton"><iconify-icon icon="solar:magic-stick-3-linear"></iconify-icon>设计模式</button><button type="button" class="select-button" id="modelButton"><iconify-icon icon="solar:cpu-bolt-linear"></iconify-icon><span id="modelLabel">Pi 默认模型</span></button><label class="thinking-toggle"><input id="thinkingToggle" type="checkbox" checked /><span></span>深度思考</label></div><div><button type="button" class="composer-button" id="voiceButton" aria-label="语音输入"><iconify-icon icon="solar:microphone-3-linear"></iconify-icon></button><button type="submit" class="send-button" id="sendButton" aria-label="发送"><iconify-icon icon="solar:arrow-up-linear"></iconify-icon></button></div></div></form>
+			</main>
+
+			<aside class="run-panel" id="runPanel">
+				<header class="run-header"><div><span class="pi-mark"><iconify-icon icon="solar:graph-new-up-linear"></iconify-icon></span><h2>Pi 任务运行</h2></div><div class="connection"><span id="connectionDot"></span><span id="connectionLabel">连接中</span></div><button class="panel-close icon-button" id="closePanel" aria-label="关闭运行面板"><iconify-icon icon="solar:close-circle-linear"></iconify-icon></button></header>
+				<div class="run-content"><section class="run-summary"><div class="summary-head"><span class="task-icon"><iconify-icon icon="solar:box-minimalistic-linear"></iconify-icon></span><div><strong id="runTitle">模块化便携式意式咖啡机</strong><small>设计概念探索</small></div><button class="icon-button"><iconify-icon icon="solar:menu-dots-bold"></iconify-icon></button></div><div class="summary-meta"><span><i class="status-dot"></i><b id="runStatus">运行中</b></span><strong id="elapsed">00:05:32</strong></div><div class="progress"><span id="progressBar" style="width: 68%"></span></div><div class="progress-label"><span>当前进度</span><b id="progressCount">4 / 6</b></div></section>
+					<div class="run-tabs" role="tablist"><button class="active" role="tab" aria-selected="true" data-tab="process">执行过程</button><button role="tab" aria-selected="false" data-tab="results">产出结果 <span>3</span></button><button role="tab" aria-selected="false" data-tab="resources">相关资源 <span>8</span></button></div><section class="tab-panel" id="tabPanel" hidden></section>
+					<ol class="steps" id="steps"><li class="done"><span class="step-state"><iconify-icon icon="solar:check-circle-bold"></iconify-icon></span><div><strong>理解任务需求</strong><small>已提取场景、尺寸与体验目标</small></div><time>10:19</time></li><li class="done"><span class="step-state"><iconify-icon icon="solar:check-circle-bold"></iconify-icon></span><div><strong>市场调研与竞品分析</strong><small>完成 8 个竞品特征归纳</small></div><time>10:20</time></li><li class="done"><span class="step-state"><iconify-icon icon="solar:check-circle-bold"></iconify-icon></span><div><strong>整理设计方向与关键词</strong><small>模块化 · 便携 · 专业萃取</small></div><time>10:22</time></li><li class="running"><span class="step-state"></span><div><strong>生成产品概念图</strong><small id="activeStepDetail">正在使用 AI 生成图像…</small><div class="inline-progress"><span id="inlineProgress" style="width:68%"></span></div></div><time>68%</time><div class="tool-call" id="toolCall"><div><iconify-icon icon="solar:gallery-edit-linear"></iconify-icon><strong>AI 图像生成</strong><time>00:00:48</time></div><label>提示词</label><p>模块化便携式意式咖啡机，户外场景，产品摄影风格，极简工业设计，金属质感，4K。</p><button>查看完整参数 <iconify-icon icon="solar:alt-arrow-down-linear"></iconify-icon></button></div></li><li><span class="step-state"></span><div><strong>撰写设计说明</strong><small>等待中</small></div></li><li><span class="step-state"></span><div><strong>整理交付内容</strong><small>等待中</small></div></li></ol>
+					<section class="permission-card" id="permissionCard"><div><span class="permission-icon"><iconify-icon icon="solar:folder-with-files-linear"></iconify-icon></span><div><strong>需要访问素材库</strong><p>为保证 CMF 建议准确，需要读取当前项目的材质样本。</p></div></div><div><button data-permission="false">拒绝</button><button class="primary" data-permission="true">允许访问</button></div></section>
+				</div>
+				<footer class="run-actions"><button class="danger" id="stopButton"><iconify-icon icon="solar:stop-bold"></iconify-icon>停止任务</button><button id="retryButton"><iconify-icon icon="solar:restart-linear"></iconify-icon>重试当前步骤</button></footer>
+			</aside>
+		</div>
+		<div class="toast" id="toast" role="status"></div>
+		<dialog id="imageDialog" class="image-dialog"><button id="closeImage" class="icon-button" aria-label="关闭">×</button><img src="/espresso-system.png" alt="模块化便携式意式咖啡机设计概念大图" /></dialog>
+		<script type="module" src="/app.js"></script>
+	</body>
+</html>
