@@ -673,6 +673,57 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "get_messages", { messages: session.messages });
 			}
 
+			case "get_message_entries": {
+				const messages = session.sessionManager
+					.buildSessionProjection()
+					.entries.flatMap((entry) =>
+						entry.messages.map((message) => ({ entryId: entry.sourceEntry.id, message })),
+					);
+				return success(id, "get_message_entries", { messages });
+			}
+
+			case "omit_message": {
+				if (session.isStreaming || session.isCompacting) {
+					return error(id, "omit_message", "Wait for the current task to finish before deleting a message");
+				}
+				const projected = session.sessionManager
+					.buildSessionProjection()
+					.entries.find((entry) => entry.sourceEntry.id === command.entryId);
+				if (!projected || !projected.messages.some((message) => message.role === "assistant")) {
+					return error(id, "omit_message", "Assistant message not found on the active branch");
+				}
+				const editId = session.sessionManager.appendContextEdit(command.entryId, null);
+				session.refreshContext();
+				return success(id, "omit_message", { editId });
+			}
+
+			case "rewind_to_user": {
+				if (session.isStreaming || session.isCompacting) {
+					return error(id, "rewind_to_user", "Wait for the current task to finish before rewinding a message");
+				}
+				const projected = session.sessionManager
+					.buildSessionProjection()
+					.entries.find((entry) => entry.sourceEntry.id === command.entryId);
+				if (!projected || !projected.messages.some((message) => message.role === "user")) {
+					return error(id, "rewind_to_user", "User message not found on the active branch");
+				}
+				const result = await session.navigateTree(command.entryId);
+				if (result.cancelled) return error(id, "rewind_to_user", "Rewind was cancelled");
+				return success(id, "rewind_to_user", { text: result.editorText ?? "" });
+			}
+
+			case "restore_leaf": {
+				if (session.isStreaming || session.isCompacting) {
+					return error(id, "restore_leaf", "Wait for the current task to finish before restoring a branch");
+				}
+				if (!session.sessionManager.getEntries().some((entry) => entry.id === command.entryId)) {
+					return error(id, "restore_leaf", "Checkpoint entry not found");
+				}
+				session.sessionManager.branch(command.entryId);
+				session.refreshContext();
+				return success(id, "restore_leaf");
+			}
+
 			// =================================================================
 			// Commands (available for invocation via prompt)
 			// =================================================================

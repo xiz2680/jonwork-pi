@@ -69,6 +69,10 @@ export type RpcCommand =
 
 	// Messages
 	| { id?: string; type: "get_messages" }
+	| { id?: string; type: "get_message_entries" }
+	| { id?: string; type: "omit_message"; entryId: string }
+	| { id?: string; type: "rewind_to_user"; entryId: string }
+	| { id?: string; type: "restore_leaf"; entryId: string }
 
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
@@ -231,6 +235,22 @@ export type RpcResponse =
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_message_entries";
+			success: true;
+			data: { messages: Array<{ entryId: string; message: AgentMessage }> };
+	  }
+	| { id?: string; type: "response"; command: "omit_message"; success: true; data: { editId: string } }
+	| {
+			id?: string;
+			type: "response";
+			command: "rewind_to_user";
+			success: true;
+			data: { text: string };
+	  }
+	| { id?: string; type: "response"; command: "restore_leaf"; success: true }
 
 	// Commands
 	| {
