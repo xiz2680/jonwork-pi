@@ -1,0 +1,19 @@
+{
+	"contract": "pi-gateway/1.0",
+	"sessionId": "session-01",
+	"repositoryId": "repo-01",
+	"revision": 7,
+	"lastEventId": "12",
+	"runtime": "running",
+	"run": {"status": "idle", "operationId": null},
+	"controller": {"clientId": "ios-01", "leaseExpiresAt": "2026-10-13T08:30:00.000Z"},
+	"configuration": {
+		"model": {"provider": "openai", "id": "gpt-example"},
+		"thinkingLevel": "medium"
+	},
+	"messages": [
+		{"id": "message-01", "role": "user", "status": "completed", "content": [{"type": "text", "text": "Inspect the repository"}]},
+		{"id": "message-02", "role": "assistant", "status": "completed", "content": [{"type": "text", "text": "Inspection complete."}]}
+	],
+	"attachments": []
+}

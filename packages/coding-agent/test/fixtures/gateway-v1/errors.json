@@ -1,0 +1,5 @@
+[
+	{"error":{"code":"not_controller","message":"Only the current controller may mutate a Session","requestId":"request-01","retryable":false}},
+	{"error":{"code":"revision_conflict","message":"Session revision does not match","requestId":"request-02","retryable":true}},
+	{"error":{"code":"replay_cursor_expired","message":"Fetch a new authoritative snapshot","requestId":"request-03","retryable":true}}
+]

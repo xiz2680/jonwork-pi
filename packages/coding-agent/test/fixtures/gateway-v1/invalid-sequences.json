@@ -1,0 +1,63 @@
+{
+	"duplicate": {
+		"sessionId": "session-invalid-duplicate",
+		"afterEventId": "0",
+		"expectedCode": "duplicate_event",
+		"events": [
+			{"contract":"pi-gateway/1.0","id":"1","sessionId":"session-invalid-duplicate","sessionRevision":1,"occurredAt":"2026-10-13T09:00:00.000Z","type":"controller.changed","data":{"previousControllerClientId":null,"controllerClientId":"ios-01","reason":"takeover"}},
+			{"contract":"pi-gateway/1.0","id":"1","sessionId":"session-invalid-duplicate","sessionRevision":2,"occurredAt":"2026-10-13T09:00:00.010Z","type":"controller.changed","data":{"previousControllerClientId":"ios-01","controllerClientId":null,"reason":"release"}}
+		]
+	},
+	"outOfOrder": {
+		"sessionId": "session-invalid-order",
+		"afterEventId": "1",
+		"expectedCode": "out_of_order_event",
+		"events": [
+			{"contract":"pi-gateway/1.0","id":"2","sessionId":"session-invalid-order","sessionRevision":1,"occurredAt":"2026-10-13T09:01:00.000Z","type":"controller.changed","data":{"previousControllerClientId":null,"controllerClientId":"ios-01","reason":"takeover"}},
+			{"contract":"pi-gateway/1.0","id":"1","sessionId":"session-invalid-order","sessionRevision":2,"occurredAt":"2026-10-13T09:01:00.010Z","type":"controller.changed","data":{"previousControllerClientId":"ios-01","controllerClientId":null,"reason":"release"}}
+		]
+	},
+	"gap": {
+		"sessionId": "session-invalid-gap",
+		"afterEventId": "0",
+		"expectedCode": "event_gap",
+		"events": [
+			{"contract":"pi-gateway/1.0","id":"1","sessionId":"session-invalid-gap","sessionRevision":1,"occurredAt":"2026-10-13T09:02:00.000Z","type":"controller.changed","data":{"previousControllerClientId":null,"controllerClientId":"ios-01","reason":"takeover"}},
+			{"contract":"pi-gateway/1.0","id":"3","sessionId":"session-invalid-gap","sessionRevision":2,"occurredAt":"2026-10-13T09:02:00.010Z","type":"controller.changed","data":{"previousControllerClientId":"ios-01","controllerClientId":null,"reason":"release"}}
+		]
+	},
+	"duplicateTerminal": {
+		"sessionId": "session-invalid-terminal",
+		"afterEventId": "0",
+		"expectedCode": "invalid_event_lifecycle",
+		"events": [
+			{"contract":"pi-gateway/1.0","id":"1","sessionId":"session-invalid-terminal","sessionRevision":1,"occurredAt":"2026-10-13T09:03:00.000Z","type":"operation.accepted","data":{"operationId":"operation-terminal","command":"prompt","retryOfOperationId":null}},
+			{"contract":"pi-gateway/1.0","id":"2","sessionId":"session-invalid-terminal","sessionRevision":2,"occurredAt":"2026-10-13T09:03:00.010Z","type":"operation.settled","data":{"operationId":"operation-terminal","status":"completed","retryOfOperationId":null,"error":null}},
+			{"contract":"pi-gateway/1.0","id":"3","sessionId":"session-invalid-terminal","sessionRevision":3,"occurredAt":"2026-10-13T09:03:00.020Z","type":"operation.settled","data":{"operationId":"operation-terminal","status":"completed","retryOfOperationId":null,"error":null}}
+		]
+	},
+	"duplicateToolTerminal": {
+		"sessionId": "session-invalid-tool-terminal",
+		"afterEventId": "0",
+		"expectedCode": "invalid_event_lifecycle",
+		"events": [
+			{"contract":"pi-gateway/1.0","id":"1","sessionId":"session-invalid-tool-terminal","sessionRevision":1,"occurredAt":"2026-10-13T09:03:10.000Z","type":"operation.accepted","data":{"operationId":"operation-tool-terminal","command":"prompt","retryOfOperationId":null}},
+			{"contract":"pi-gateway/1.0","id":"2","sessionId":"session-invalid-tool-terminal","sessionRevision":1,"occurredAt":"2026-10-13T09:03:10.010Z","type":"turn.started","data":{"operationId":"operation-tool-terminal","turnId":"turn-tool-terminal"}},
+			{"contract":"pi-gateway/1.0","id":"3","sessionId":"session-invalid-tool-terminal","sessionRevision":1,"occurredAt":"2026-10-13T09:03:10.020Z","type":"assistant.message.started","data":{"operationId":"operation-tool-terminal","turnId":"turn-tool-terminal","messageId":"assistant-tool-terminal"}},
+			{"contract":"pi-gateway/1.0","id":"4","sessionId":"session-invalid-tool-terminal","sessionRevision":1,"occurredAt":"2026-10-13T09:03:10.030Z","type":"tool.started","data":{"operationId":"operation-tool-terminal","turnId":"turn-tool-terminal","messageId":"assistant-tool-terminal","toolCallId":"tool-terminal","parentCallId":null,"toolName":"read","arguments":{"path":"README.md"}}},
+			{"contract":"pi-gateway/1.0","id":"5","sessionId":"session-invalid-tool-terminal","sessionRevision":1,"occurredAt":"2026-10-13T09:03:10.040Z","type":"tool.completed","data":{"operationId":"operation-tool-terminal","turnId":"turn-tool-terminal","messageId":"assistant-tool-terminal","toolCallId":"tool-terminal","parentCallId":null,"status":"success","result":{"text":"done"},"error":null}},
+			{"contract":"pi-gateway/1.0","id":"6","sessionId":"session-invalid-tool-terminal","sessionRevision":1,"occurredAt":"2026-10-13T09:03:10.050Z","type":"tool.completed","data":{"operationId":"operation-tool-terminal","turnId":"turn-tool-terminal","messageId":"assistant-tool-terminal","toolCallId":"tool-terminal","parentCallId":null,"status":"success","result":{"text":"done again"},"error":null}}
+		]
+	},
+	"missingParent": {
+		"sessionId": "session-invalid-parent",
+		"afterEventId": "0",
+		"expectedCode": "invalid_event_lifecycle",
+		"events": [
+			{"contract":"pi-gateway/1.0","id":"1","sessionId":"session-invalid-parent","sessionRevision":1,"occurredAt":"2026-10-13T09:04:00.000Z","type":"operation.accepted","data":{"operationId":"operation-parent","command":"prompt","retryOfOperationId":null}},
+			{"contract":"pi-gateway/1.0","id":"2","sessionId":"session-invalid-parent","sessionRevision":1,"occurredAt":"2026-10-13T09:04:00.010Z","type":"turn.started","data":{"operationId":"operation-parent","turnId":"turn-parent"}},
+			{"contract":"pi-gateway/1.0","id":"3","sessionId":"session-invalid-parent","sessionRevision":1,"occurredAt":"2026-10-13T09:04:00.020Z","type":"assistant.message.started","data":{"operationId":"operation-parent","turnId":"turn-parent","messageId":"assistant-parent"}},
+			{"contract":"pi-gateway/1.0","id":"4","sessionId":"session-invalid-parent","sessionRevision":1,"occurredAt":"2026-10-13T09:04:00.030Z","type":"tool.started","data":{"operationId":"operation-parent","turnId":"turn-parent","messageId":"assistant-parent","toolCallId":"tool-orphan","parentCallId":"tool-missing","toolName":"read","arguments":{"path":"README.md"}}}
+		]
+	}
+}

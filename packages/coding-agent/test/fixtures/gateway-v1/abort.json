@@ -1,0 +1,10 @@
+[
+	{"contract":"pi-gateway/1.0","id":"1","sessionId":"session-abort","sessionRevision":1,"occurredAt":"2026-10-13T08:30:00.000Z","type":"operation.accepted","data":{"operationId":"operation-abort","command":"prompt","retryOfOperationId":null}},
+	{"contract":"pi-gateway/1.0","id":"2","sessionId":"session-abort","sessionRevision":1,"occurredAt":"2026-10-13T08:30:00.010Z","type":"turn.started","data":{"operationId":"operation-abort","turnId":"turn-abort"}},
+	{"contract":"pi-gateway/1.0","id":"3","sessionId":"session-abort","sessionRevision":1,"occurredAt":"2026-10-13T08:30:00.020Z","type":"assistant.message.started","data":{"operationId":"operation-abort","turnId":"turn-abort","messageId":"assistant-abort"}},
+	{"contract":"pi-gateway/1.0","id":"4","sessionId":"session-abort","sessionRevision":1,"occurredAt":"2026-10-13T08:30:00.030Z","type":"assistant.text.delta","data":{"operationId":"operation-abort","turnId":"turn-abort","messageId":"assistant-abort","delta":"Partial"}},
+	{"contract":"pi-gateway/1.0","id":"5","sessionId":"session-abort","sessionRevision":2,"occurredAt":"2026-10-13T08:30:00.040Z","type":"abort.requested","data":{"operationId":"operation-abort","requestedByClientId":"ios-01"}},
+	{"contract":"pi-gateway/1.0","id":"6","sessionId":"session-abort","sessionRevision":2,"occurredAt":"2026-10-13T08:30:00.050Z","type":"assistant.message.completed","data":{"operationId":"operation-abort","turnId":"turn-abort","messageId":"assistant-abort","status":"aborted","error":null}},
+	{"contract":"pi-gateway/1.0","id":"7","sessionId":"session-abort","sessionRevision":2,"occurredAt":"2026-10-13T08:30:00.060Z","type":"turn.completed","data":{"operationId":"operation-abort","turnId":"turn-abort","status":"aborted"}},
+	{"contract":"pi-gateway/1.0","id":"8","sessionId":"session-abort","sessionRevision":3,"occurredAt":"2026-10-13T08:30:00.070Z","type":"operation.settled","data":{"operationId":"operation-abort","status":"aborted","retryOfOperationId":null,"error":null}}
+]

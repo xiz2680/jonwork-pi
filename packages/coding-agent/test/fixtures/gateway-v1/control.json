@@ -1,0 +1,5 @@
+[
+	{"contract":"pi-gateway/1.0","id":"1","sessionId":"session-control","sessionRevision":2,"occurredAt":"2026-10-13T08:50:00.000Z","type":"controller.changed","data":{"previousControllerClientId":"cli-01","controllerClientId":"ios-01","reason":"takeover"}},
+	{"contract":"pi-gateway/1.0","id":"2","sessionId":"session-control","sessionRevision":3,"occurredAt":"2026-10-13T08:50:00.010Z","type":"controller.changed","data":{"previousControllerClientId":"ios-01","controllerClientId":null,"reason":"release"}},
+	{"contract":"pi-gateway/1.0","id":"3","sessionId":"session-control","sessionRevision":3,"occurredAt":"2026-10-13T08:50:00.020Z","type":"session.released","data":{"byClientId":"ios-01"}}
+]
