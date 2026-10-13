@@ -26,9 +26,9 @@ Each capability is explicit. An absent or false required capability produces `ca
 
 ## Authentication and authorization
 
-All `/v1` resources require an OAuth 2 bearer access token. Native clients use authorization code with PKCE S256. Discovery publishes exact authorization and token endpoints. Tokens never appear in a URL, event payload, log, attachment metadata, or error detail. The gateway binds every repository and Session to the authenticated principal and checks authorization before resolving filesystem paths.
+All `/v1` resources except discovery and the OAuth endpoints require an OAuth 2 bearer access token. Native clients use authorization code with PKCE S256 through a system authentication session. Discovery publishes the exact authorization, token, and revocation endpoints, public `clientId`, scopes, and token lifetime policy. Authorization redirects must exactly match a registered native callback; wildcard and caller-selected web redirects are forbidden. Tokens never appear in a URL, event payload, log, attachment metadata, or error detail. The gateway binds every repository and Session to the authenticated principal and checks authorization before resolving filesystem paths.
 
-Access tokens are short-lived. Revocation must terminate active streams and in-flight mutations before acknowledging the revoke operation. TLS is required except for explicit loopback development profiles. Query-string bearer tokens are forbidden.
+The token endpoint accepts only `authorization_code` and `refresh_token` form grants. Authorization codes are single-use, expire within five minutes, and are bound to the PKCE verifier, client, redirect URI, installation, and principal. Access tokens are short-lived. Every refresh rotates the refresh token; replay of an already consumed refresh token revokes its entire token family. The revocation endpoint accepts access or refresh tokens, returns the same success response for known and unknown tokens, and must terminate affected streams and in-flight mutations before acknowledging revocation. TLS is required except for explicit loopback development profiles. Query-string bearer tokens and cookie authentication for Gateway APIs are forbidden.
 
 ## Sessions and single-writer control
 
@@ -58,7 +58,9 @@ Successful idempotency records are retained for at least the discovery document'
 - `retry` names the settled `operationId` being retried and creates a new operation ID;
 - `compact` requests durable context compaction.
 
-Successful command admission returns `202` with an `operationId`, new Session revision, and the event cursor at or after which its lifecycle is observed. Admission is not completion. Unknown completion after a client timeout is resolved by repeating the same idempotency key, never by creating a new prompt automatically.
+Successful command admission returns `202` with an applied mutation receipt containing an `operationId`, new Session revision, and the event cursor at or after which its lifecycle is observed. Admission is not completion.
+
+After an ambiguous network timeout, a client first calls `GET /v1/sessions/{sessionId}/mutation-receipt` with the original `Idempotency-Key` and `X-Client-Id` headers. `pending` means the original mutation is still resolving; `applied` returns the original receipt; `mutation_not_found` means no retained record exists. A client may repeat only the exact original request with the same key. It never creates a new key or automatically resends a prompt. Receipt lookup is read-only and does not require `If-Match`.
 
 ## Event stream, ordering, and recovery
 
@@ -113,9 +115,11 @@ The gateway retains at least the duration and count advertised by discovery. A c
 
 ## Attachments
 
-`POST /v1/attachments` uploads one binary body with `Content-Type`, `Content-Length`, `X-File-Name`, and an idempotency key. The default contract limits are four attachments per prompt, 10 MiB per attachment, 20 MiB total per prompt, a 30-second upload deadline, and a 255-byte UTF-8 filename. Discovery may lower, never silently raise, these limits for a client profile.
+`POST /v1/attachments` uploads exactly one raw binary body with `Content-Type`, `Content-Length`, `Content-Digest`, percent-encoded UTF-8 `X-File-Name`, and an idempotency key. Multipart, JSON, data URLs, transfer compression, and base64 bodies are forbidden. `Content-Digest` uses `sha-256=:<base64>:` over the exact transmitted bytes. The decoded NFC filename is one display-only path component: NUL, `/`, `\\`, `.` and `..` are rejected. The default limits are four attachments per prompt, 10 MiB per attachment, 20 MiB total per prompt, a 30-second upload/download deadline, and a 255-byte UTF-8 filename. Discovery publishes the accepted media types and may lower, never silently raise, these limits for a client profile.
 
-The gateway validates declared length, streamed byte count, media signature where applicable, authorized repository scope, and capability before persistence. Incomplete, oversized, timed-out, unsupported, or quarantined uploads are not attachable. Attachment IDs are opaque, principal-scoped, expire if unused, and are consumed by reference; prompt JSON never embeds unbounded base64. Image support and general file support have independent capability flags.
+The gateway validates declared length, streamed byte count, digest, media signature where applicable, authorized repository scope, and capability before persistence. A digest mismatch is `invalid_request`; incomplete, oversized, timed-out, unsupported, or quarantined uploads are not attachable. `application/octet-stream` is accepted only when the `files` capability is true. Attachment IDs are opaque, principal- and repository-scoped, expire if unused, and are consumed by reference; prompt JSON never embeds unbounded base64. Image support and general file support have independent capability flags.
+
+`GET /v1/attachments/{attachmentId}` returns metadata. `GET /v1/attachments/{attachmentId}/content` returns the original bytes with exact `Content-Type`, `Content-Length`, `Content-Digest`, and SHA-256 `ETag`; it never redirects to an untrusted URL. The gateway reauthorizes before headers and during streaming, and a truncated or digest-mismatched response is not a successful download. Range requests are not part of v1. Attachment content and metadata responses are `private, no-store`.
 
 ## Errors and timeouts
 

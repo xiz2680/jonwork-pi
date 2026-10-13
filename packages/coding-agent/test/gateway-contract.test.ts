@@ -35,12 +35,18 @@ describe("Pi Gateway v1 OpenAPI contract", () => {
 			[
 				"/.well-known/pi-gateway",
 				"/v1/attachments",
+				"/v1/attachments/{attachmentId}",
+				"/v1/attachments/{attachmentId}/content",
+				"/v1/auth/authorize",
+				"/v1/auth/revoke",
+				"/v1/auth/token",
 				"/v1/models",
 				"/v1/repositories",
 				"/v1/sessions",
 				"/v1/sessions/{sessionId}",
 				"/v1/sessions/{sessionId}/commands",
 				"/v1/sessions/{sessionId}/events",
+				"/v1/sessions/{sessionId}/mutation-receipt",
 				"/v1/sessions/{sessionId}/release",
 				"/v1/sessions/{sessionId}/restore",
 				"/v1/sessions/{sessionId}/takeover",
@@ -59,6 +65,74 @@ describe("Pi Gateway v1 OpenAPI contract", () => {
 			expect(parameters.map((parameter) => parameter.$ref)).toContain("#/components/parameters/IdempotencyKey");
 			expect(parameters.map((parameter) => parameter.$ref)).toContain("#/components/parameters/IfMatch");
 		}
+	});
+
+	test("defines PKCE exchange, refresh rotation, and idempotent revocation", async () => {
+		const document = object(parse(await readFile(openApi, "utf8")));
+		const paths = object(document.paths);
+		const token = object(object(paths["/v1/auth/token"]).post);
+		expect(token.security).toEqual([]);
+		const tokenContent = object(object(token.requestBody).content);
+		const tokenSchema = object(object(tokenContent["application/x-www-form-urlencoded"]).schema);
+		expect(tokenSchema.oneOf).toEqual([
+			{ $ref: "#/components/schemas/AuthorizationCodeTokenRequest" },
+			{ $ref: "#/components/schemas/RefreshTokenRequest" },
+		]);
+
+		const revoke = object(object(paths["/v1/auth/revoke"]).post);
+		expect(revoke.security).toEqual([]);
+		const revokeSchema = object(
+			object(object(object(revoke.requestBody).content)["application/x-www-form-urlencoded"]).schema,
+		);
+		expect(revokeSchema.required).toEqual(["client_id", "token"]);
+		expect(object(object(object(revoke.responses)["200"]).content)).toHaveProperty("application/json");
+	});
+
+	test("supports read-only mutation receipt lookup without a revision precondition", async () => {
+		const document = object(parse(await readFile(openApi, "utf8")));
+		const route = object(object(object(document.paths)["/v1/sessions/{sessionId}/mutation-receipt"]).get);
+		const parameters = route.parameters as Array<Record<string, string>>;
+		expect(parameters.map((parameter) => parameter.$ref)).toEqual([
+			"#/components/parameters/IdempotencyKey",
+			"#/components/parameters/ClientIdHeader",
+		]);
+		expect(parameters.map((parameter) => parameter.$ref)).not.toContain("#/components/parameters/IfMatch");
+		const response = object(object(route.responses)["200"]);
+		const schema = object(object(object(response.content)["application/json"]).schema);
+		expect(schema.$ref).toBe("#/components/schemas/MutationReceiptLookup");
+	});
+
+	test("defines raw binary upload integrity and authorized full-byte download", async () => {
+		const document = object(parse(await readFile(openApi, "utf8")));
+		const paths = object(document.paths);
+		const upload = object(object(paths["/v1/attachments"]).post);
+		const uploadContent = object(object(upload.requestBody).content);
+		const uploadTypes = Object.keys(uploadContent).sort();
+		expect(uploadTypes).toEqual(["application/octet-stream", "image/jpeg", "image/png", "image/webp"]);
+		expect(uploadTypes).not.toContain("application/json");
+		expect(uploadTypes).not.toContain("multipart/form-data");
+		for (const mediaType of uploadTypes) {
+			expect(object(object(uploadContent[mediaType]).schema)).toMatchObject({ type: "string", format: "binary" });
+		}
+		const uploadParameters = upload.parameters as Array<Record<string, unknown>>;
+		expect(uploadParameters).toContainEqual({ $ref: "#/components/parameters/ContentDigest" });
+		expect(uploadParameters).toContainEqual(expect.objectContaining({ name: "Content-Length", required: true }));
+		expect(uploadParameters).toContainEqual(expect.objectContaining({ name: "X-File-Name", required: true }));
+
+		const download = object(object(paths["/v1/attachments/{attachmentId}/content"]).get);
+		const response = object(object(download.responses)["200"]);
+		expect(Object.keys(object(response.headers)).sort()).toEqual([
+			"Content-Digest",
+			"Content-Length",
+			"Content-Type",
+			"ETag",
+		]);
+		expect(Object.keys(object(response.content)).sort()).toEqual([
+			"application/octet-stream",
+			"image/jpeg",
+			"image/png",
+			"image/webp",
+		]);
 	});
 
 	test("keeps documented errors synchronized with the implementation", async () => {
@@ -106,7 +180,11 @@ describe("Pi Gateway v1 fixtures", () => {
 	test("advertises the fail-closed capability and PKCE boundary", async () => {
 		const discovery = object(await jsonFixture("discovery.json"));
 		expect(discovery.contract).toBe(PI_GATEWAY_CONTRACT_ID);
-		expect(object(discovery.authentication).pkceMethods).toEqual(["S256"]);
+		const authentication = object(discovery.authentication);
+		expect(authentication.pkceMethods).toEqual(["S256"]);
+		expect(authentication.scopes).toEqual(["pi.gateway"]);
+		expect(authentication.refreshTokenRotation).toBe("required");
+		expect(authentication.revocationEndpoint).toBe("https://gateway.example.test/v1/auth/revoke");
 		const capabilities = object(discovery.capabilities);
 		for (const required of [
 			"repositories",
@@ -128,6 +206,29 @@ describe("Pi Gateway v1 fixtures", () => {
 			expect(capabilities[required], required).toBe(true);
 		}
 		expect(object(capabilities.attachments)).toEqual({ images: true, files: false });
+		const limits = object(discovery.limits);
+		expect(limits.attachmentDigestAlgorithm).toBe("sha-256");
+		expect(limits.attachmentMediaTypes).toEqual(["image/png", "image/jpeg", "image/webp"]);
+	});
+
+	test("provides rotated token and applied mutation receipt examples", async () => {
+		const token = object(await jsonFixture("oauth-token.json"));
+		expect(token).toMatchObject({
+			token_type: "Bearer",
+			expires_in: 900,
+			scope: "pi.gateway",
+		});
+		expect(token.access_token).not.toBe(token.refresh_token);
+
+		const receipt = object(await jsonFixture("mutation-receipt.json"));
+		expect(receipt).toEqual({
+			status: "applied",
+			sessionId: "session-01",
+			revision: 8,
+			operationId: "operation-01",
+			afterEventId: "12",
+			responseStatus: 202,
+		});
 	});
 
 	test("contains reasoning and a successful tool lifecycle after an authoritative cursor", async () => {
@@ -242,6 +343,11 @@ describe("Pi Gateway v1 fixtures", () => {
 		const errors = (await jsonFixture("errors.json")) as Array<Record<string, unknown>>;
 		expect(attachment.byteLength).toBeLessThanOrEqual(10 * 1024 * 1024);
 		expect(attachment.sha256).toMatch(/^[a-f0-9]{64}$/);
+		expect(attachment).toMatchObject({
+			repositoryId: "repo-01",
+			kind: "image",
+			contentPath: "/v1/attachments/attachment-01/content",
+		});
 		expect(errors.map((entry) => object(entry.error).code)).toEqual([
 			"not_controller",
 			"revision_conflict",

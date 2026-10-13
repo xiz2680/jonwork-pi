@@ -1,9 +1,13 @@
 {
 	"attachmentId": "attachment-01",
+	"repositoryId": "repo-01",
+	"kind": "image",
 	"fileName": "diagram.png",
 	"mediaType": "image/png",
 	"byteLength": 4096,
 	"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 	"status": "ready",
-	"expiresAt": "2026-10-13T09:00:00.000Z"
+	"createdAt": "2026-10-13T08:00:00.000Z",
+	"expiresAt": "2026-10-13T09:00:00.000Z",
+	"contentPath": "/v1/attachments/attachment-01/content"
 }

@@ -1,0 +1,8 @@
+{
+	"access_token": "access-token-value-00000000000000000000",
+	"token_type": "Bearer",
+	"expires_in": 900,
+	"refresh_token": "refresh-token-value-000000000000000000",
+	"refresh_expires_in": 2592000,
+	"scope": "pi.gateway"
+}

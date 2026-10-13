@@ -1,0 +1,8 @@
+{
+	"status": "applied",
+	"sessionId": "session-01",
+	"revision": 8,
+	"operationId": "operation-01",
+	"afterEventId": "12",
+	"responseStatus": 202
+}

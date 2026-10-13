@@ -6,7 +6,7 @@ info:
 servers:
   - url: https://gateway.example.invalid
 security:
-  - oauth2: []
+  - oauth2: [pi.gateway]
 paths:
   /.well-known/pi-gateway:
     get:
@@ -19,6 +19,97 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GatewayDiscovery"
+  /v1/auth/authorize:
+    get:
+      operationId: authorizeNativeClient
+      security: []
+      parameters:
+        - in: query
+          name: response_type
+          required: true
+          schema: {const: code}
+        - in: query
+          name: client_id
+          required: true
+          schema: {type: string, minLength: 1}
+        - in: query
+          name: redirect_uri
+          required: true
+          schema: {type: string, format: uri}
+        - in: query
+          name: scope
+          required: true
+          schema: {type: string, minLength: 1}
+        - in: query
+          name: state
+          required: true
+          schema: {type: string, minLength: 16, maxLength: 512}
+        - in: query
+          name: code_challenge
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9_-]{43}$'}
+        - in: query
+          name: code_challenge_method
+          required: true
+          schema: {const: S256}
+      responses:
+        "302":
+          description: Redirect to the exact registered native callback with a single-use code and state, or OAuth error and state.
+          headers:
+            Location:
+              required: true
+              schema: {type: string, format: uri}
+        default: {$ref: "#/components/responses/OAuthError"}
+  /v1/auth/token:
+    post:
+      operationId: exchangeGatewayToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/AuthorizationCodeTokenRequest"
+                - $ref: "#/components/schemas/RefreshTokenRequest"
+              discriminator:
+                propertyName: grant_type
+      responses:
+        "200":
+          description: Short-lived access token and rotated refresh token. Response is private and no-store.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OAuthTokenResponse"}
+        "400": {$ref: "#/components/responses/OAuthError"}
+        default: {$ref: "#/components/responses/OAuthError"}
+  /v1/auth/revoke:
+    post:
+      operationId: revokeGatewayToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [client_id, token]
+              properties:
+                client_id: {type: string, minLength: 1}
+                token: {type: string, minLength: 32, maxLength: 4096}
+                token_type_hint: {enum: [access_token, refresh_token]}
+      responses:
+        "200":
+          description: Idempotent success for known and unknown tokens, returned only after affected work and streams are revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [revoked]
+                properties:
+                  revoked: {const: true}
+        default: {$ref: "#/components/responses/OAuthError"}
   /v1/repositories:
     get:
       operationId: listRepositories
@@ -205,6 +296,27 @@ paths:
       responses:
         "202": {$ref: "#/components/responses/MutationAccepted"}
         default: {$ref: "#/components/responses/Error"}
+  /v1/sessions/{sessionId}/mutation-receipt:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: lookupMutationReceipt
+      description: Read-only lookup after an ambiguous mutation response. It never submits or retries work.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ClientIdHeader"
+      responses:
+        "200":
+          description: The original mutation is pending or its original applied receipt is available.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MutationReceiptLookup"}
+        "404":
+          description: No retained mutation exists for this principal, Session, client, and key.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorResponse"}
+        default: {$ref: "#/components/responses/Error"}
   /v1/sessions/{sessionId}/takeover:
     parameters:
       - $ref: "#/components/parameters/SessionId"
@@ -260,11 +372,13 @@ paths:
         - in: header
           name: X-File-Name
           required: true
+          description: Percent-encoded UTF-8 NFC display name; decoded value is at most 255 bytes and cannot contain path separators, NUL, `.` or `..`.
           schema: {type: string, minLength: 1, maxLength: 255}
         - in: header
           name: Content-Length
           required: true
           schema: {type: integer, minimum: 1, maximum: 10485760}
+        - $ref: "#/components/parameters/ContentDigest"
         - in: query
           name: repositoryId
           required: true
@@ -273,13 +387,13 @@ paths:
         required: true
         content:
           application/octet-stream:
-            schema: {type: string, contentEncoding: binary}
+            schema: {type: string, format: binary}
           image/png:
-            schema: {type: string, contentEncoding: binary}
+            schema: {type: string, format: binary}
           image/jpeg:
-            schema: {type: string, contentEncoding: binary}
+            schema: {type: string, format: binary}
           image/webp:
-            schema: {type: string, contentEncoding: binary}
+            schema: {type: string, format: binary}
       responses:
         "201":
           description: Validated, principal-scoped attachment reference.
@@ -289,6 +403,50 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/Attachment"}
         default: {$ref: "#/components/responses/Error"}
+  /v1/attachments/{attachmentId}:
+    parameters:
+      - $ref: "#/components/parameters/AttachmentId"
+    get:
+      operationId: getAttachmentMetadata
+      responses:
+        "200":
+          description: Authorized attachment metadata. Response is private and no-store.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Attachment"}
+        default: {$ref: "#/components/responses/Error"}
+  /v1/attachments/{attachmentId}/content:
+    parameters:
+      - $ref: "#/components/parameters/AttachmentId"
+    get:
+      operationId: downloadAttachmentContent
+      description: Full original bytes only. Range requests and redirects are not supported in v1.
+      responses:
+        "200":
+          description: Authorized raw attachment bytes. Response is private and no-store.
+          headers:
+            Content-Type:
+              required: true
+              schema: {type: string}
+            Content-Length:
+              required: true
+              schema: {type: integer, minimum: 1, maximum: 10485760}
+            Content-Digest:
+              required: true
+              schema: {type: string, pattern: '^sha-256=:[A-Za-z0-9+/]{43}=:$'}
+            ETag:
+              required: true
+              schema: {type: string, pattern: '^"sha256-[a-f0-9]{64}"$'}
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+            image/png:
+              schema: {type: string, format: binary}
+            image/jpeg:
+              schema: {type: string, format: binary}
+            image/webp:
+              schema: {type: string, format: binary}
+        default: {$ref: "#/components/responses/Error"}
 components:
   securitySchemes:
     oauth2:
@@ -296,13 +454,20 @@ components:
       description: Native authorization-code flow requires PKCE S256. Query-string tokens are forbidden.
       flows:
         authorizationCode:
-          authorizationUrl: https://gateway.example.invalid/oauth/authorize
-          tokenUrl: https://gateway.example.invalid/oauth/token
-          scopes: {}
+          authorizationUrl: https://gateway.example.invalid/v1/auth/authorize
+          tokenUrl: https://gateway.example.invalid/v1/auth/token
+          refreshUrl: https://gateway.example.invalid/v1/auth/token
+          scopes:
+            pi.gateway: Access repositories, durable Sessions, events, commands, and attachments.
   parameters:
     SessionId:
       in: path
       name: sessionId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._-]+$'}
+    AttachmentId:
+      in: path
+      name: attachmentId
       required: true
       schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._-]+$'}
     IdempotencyKey:
@@ -316,6 +481,17 @@ components:
       required: true
       description: Quoted authoritative Session revision, for example `"42"`.
       schema: {type: string, pattern: '^"[0-9]+"$'}
+    ClientIdHeader:
+      in: header
+      name: X-Client-Id
+      required: true
+      schema: {$ref: "#/components/schemas/ClientId"}
+    ContentDigest:
+      in: header
+      name: Content-Digest
+      required: true
+      description: RFC 9530 SHA-256 digest of the exact transmitted bytes.
+      schema: {type: string, pattern: '^sha-256=:[A-Za-z0-9+/]{43}=:$'}
   headers:
     IdempotencyReplayed:
       schema: {type: boolean}
@@ -334,6 +510,11 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/ErrorResponse"}
+    OAuthError:
+      description: OAuth error. Tokens, authorization codes, and verifier values are never echoed.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/OAuthErrorResponse"}
   schemas:
     ClientId:
       type: string
@@ -346,6 +527,42 @@ components:
       type: string
       minLength: 1
       maxLength: 128
+    AuthorizationCodeTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [grant_type, client_id, code, code_verifier, redirect_uri]
+      properties:
+        grant_type: {const: authorization_code}
+        client_id: {type: string, minLength: 1}
+        code: {type: string, minLength: 32, maxLength: 512}
+        code_verifier: {type: string, minLength: 43, maxLength: 128, pattern: '^[A-Za-z0-9._~-]+$'}
+        redirect_uri: {type: string, format: uri}
+    RefreshTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [grant_type, client_id, refresh_token]
+      properties:
+        grant_type: {const: refresh_token}
+        client_id: {type: string, minLength: 1}
+        refresh_token: {type: string, minLength: 32, maxLength: 4096}
+    OAuthTokenResponse:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_in, refresh_token, refresh_expires_in, scope]
+      properties:
+        access_token: {type: string, minLength: 32, maxLength: 4096}
+        token_type: {const: Bearer}
+        expires_in: {type: integer, minimum: 60, maximum: 3600}
+        refresh_token: {type: string, minLength: 32, maxLength: 4096}
+        refresh_expires_in: {type: integer, minimum: 300}
+        scope: {const: pi.gateway}
+    OAuthErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: {enum: [invalid_request, invalid_client, invalid_grant, unsupported_grant_type, invalid_scope, access_denied, temporarily_unavailable]}
+        error_description: {type: string, maxLength: 500}
     GatewayEventError:
       type: object
       additionalProperties: false
@@ -704,16 +921,25 @@ components:
         authentication:
           type: object
           additionalProperties: false
-          required: [type, authorizationEndpoint, tokenEndpoint, pkceMethods]
+          required: [type, clientId, authorizationEndpoint, tokenEndpoint, revocationEndpoint, scopes, pkceMethods, accessTokenLifetimeSeconds, refreshTokenRotation]
           properties:
             type: {const: oauth2_authorization_code}
+            clientId: {type: string, minLength: 1}
             authorizationEndpoint: {type: string, format: uri}
             tokenEndpoint: {type: string, format: uri}
+            revocationEndpoint: {type: string, format: uri}
+            scopes:
+              type: array
+              prefixItems: [{const: pi.gateway}]
+              minItems: 1
+              maxItems: 1
             pkceMethods:
               type: array
               prefixItems: [{const: S256}]
               minItems: 1
               maxItems: 1
+            accessTokenLifetimeSeconds: {type: integer, minimum: 60, maximum: 3600}
+            refreshTokenRotation: {const: required}
         capabilities:
           type: object
           additionalProperties: false
@@ -745,7 +971,7 @@ components:
     GatewayLimits:
       type: object
       additionalProperties: false
-      required: [readTimeoutMs, mutationTimeoutMs, sseConnectTimeoutMs, replayRetentionEvents, replayRetentionSeconds, idempotencyRetentionSeconds, attachmentMaxBytes, attachmentTotalBytes, attachmentsPerPrompt, attachmentUploadTimeoutMs]
+      required: [readTimeoutMs, mutationTimeoutMs, sseConnectTimeoutMs, replayRetentionEvents, replayRetentionSeconds, idempotencyRetentionSeconds, attachmentMaxBytes, attachmentTotalBytes, attachmentsPerPrompt, attachmentUploadTimeoutMs, attachmentDownloadTimeoutMs, attachmentMediaTypes, attachmentDigestAlgorithm]
       properties:
         readTimeoutMs: {type: integer, minimum: 1}
         mutationTimeoutMs: {type: integer, minimum: 1}
@@ -757,6 +983,13 @@ components:
         attachmentTotalBytes: {type: integer, minimum: 1, maximum: 20971520}
         attachmentsPerPrompt: {type: integer, minimum: 0, maximum: 4}
         attachmentUploadTimeoutMs: {type: integer, minimum: 1, maximum: 30000}
+        attachmentDownloadTimeoutMs: {type: integer, minimum: 1, maximum: 30000}
+        attachmentMediaTypes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+        attachmentDigestAlgorithm: {const: sha-256}
     Repository:
       type: object
       additionalProperties: false
@@ -858,15 +1091,19 @@ components:
     Attachment:
       type: object
       additionalProperties: false
-      required: [attachmentId, fileName, mediaType, byteLength, sha256, status, expiresAt]
+      required: [attachmentId, repositoryId, kind, fileName, mediaType, byteLength, sha256, status, createdAt, expiresAt, contentPath]
       properties:
         attachmentId: {type: string}
+        repositoryId: {type: string}
+        kind: {enum: [image, file]}
         fileName: {type: string}
         mediaType: {type: string}
         byteLength: {type: integer, minimum: 1, maximum: 10485760}
         sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
         status: {enum: [ready, consumed, rejected, expired]}
+        createdAt: {type: string, format: date-time}
         expiresAt: {type: string, format: date-time}
+        contentPath: {type: string, pattern: '^/v1/attachments/[A-Za-z0-9._-]+/content$'}
     PromptBody:
       type: object
       additionalProperties: false
@@ -923,12 +1160,27 @@ components:
     MutationReceipt:
       type: object
       additionalProperties: false
-      required: [sessionId, revision, operationId, afterEventId]
+      required: [status, sessionId, revision, operationId, afterEventId, responseStatus]
       properties:
+        status: {const: applied}
         sessionId: {type: string}
         revision: {type: integer, minimum: 1}
         operationId: {type: [string, "null"]}
         afterEventId: {$ref: "#/components/schemas/EventId"}
+        responseStatus: {type: integer, minimum: 200, maximum: 299}
+    PendingMutationReceipt:
+      type: object
+      additionalProperties: false
+      required: [status, sessionId]
+      properties:
+        status: {const: pending}
+        sessionId: {type: string}
+    MutationReceiptLookup:
+      oneOf:
+        - $ref: "#/components/schemas/PendingMutationReceipt"
+        - $ref: "#/components/schemas/MutationReceipt"
+      discriminator:
+        propertyName: status
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -940,7 +1192,7 @@ components:
           required: [code, message, requestId, retryable]
           properties:
             code:
-              enum: [invalid_request, unauthenticated, forbidden, capability_unavailable, session_not_found, session_not_running, not_controller, session_busy, revision_conflict, idempotency_conflict, invalid_replay_cursor, replay_cursor_expired, duplicate_event, out_of_order_event, event_gap, invalid_event_lifecycle, attachment_too_large, attachment_type_unsupported, attachment_limit_exceeded, timeout, rate_limited, internal_error]
+              enum: [invalid_request, unauthenticated, forbidden, capability_unavailable, session_not_found, session_not_running, not_controller, session_busy, revision_conflict, idempotency_conflict, mutation_not_found, invalid_replay_cursor, replay_cursor_expired, duplicate_event, out_of_order_event, event_gap, invalid_event_lifecycle, attachment_not_found, attachment_too_large, attachment_type_unsupported, attachment_limit_exceeded, timeout, rate_limited, internal_error]
             message: {type: string}
             requestId: {type: string}
             retryable: {type: boolean}
