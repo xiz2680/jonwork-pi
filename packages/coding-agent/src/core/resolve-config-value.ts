@@ -3,7 +3,7 @@
  * Used by auth-storage.ts and model-registry.ts.
  */
 
-import { execSync, spawnSync } from "child_process";
+import { spawnSync } from "child_process";
 import { getShellConfig } from "../utils/shell.ts";
 
 // Cache for shell command results (persists for process lifetime)
@@ -14,6 +14,102 @@ const ENV_VAR_NAME_PREFIX_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
 type TemplatePart = { type: "literal"; value: string } | { type: "env"; name: string };
 
 type ConfigValueReference = { type: "command"; config: string } | { type: "template"; parts: TemplatePart[] };
+
+const CREDENTIAL_HELPER_TIMEOUT_MS = 10_000;
+const CREDENTIAL_HELPER_KILL_GRACE_MS = 250;
+const CREDENTIAL_HELPER_OUTPUT_LIMIT = 64 * 1024;
+const CREDENTIAL_HELPER_RUNNER = `
+const { spawn } = require("node:child_process");
+const input = JSON.parse(Buffer.from(process.argv[1], "base64").toString("utf8"));
+let output = Buffer.alloc(0);
+let outputExceeded = false;
+let timedOut = false;
+let settled = false;
+let termTimer;
+let hardTimer;
+const child = spawn(input.shell, [...input.args, ...(input.commandFromStdin ? [] : [input.command])], {
+  detached: process.platform !== "win32",
+  stdio: [input.commandFromStdin ? "pipe" : "ignore", "pipe", "ignore"],
+  windowsHide: true,
+});
+function signalTree(signal) {
+  if (!child.pid) return;
+  if (process.platform === "win32") {
+    const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", ...(signal === "SIGKILL" ? ["/f"] : [])], { stdio: "ignore", windowsHide: true });
+    killer.on("error", () => { try { child.kill(signal); } catch {} });
+    return;
+  }
+  try { process.kill(-child.pid, signal); } catch { try { child.kill(signal); } catch {} }
+}
+function terminate(reason) {
+  if (settled) return;
+  if (reason === "timeout") timedOut = true;
+  if (reason === "output") outputExceeded = true;
+  signalTree("SIGTERM");
+  termTimer = setTimeout(() => signalTree("SIGKILL"), input.killGraceMs);
+}
+function finish(result) {
+  if (settled) return;
+  settled = true;
+  clearTimeout(termTimer);
+  clearTimeout(hardTimer);
+  process.removeAllListeners("SIGTERM");
+  process.removeAllListeners("SIGINT");
+  process.stdout.write(JSON.stringify(result), () => process.exit(0));
+}
+const timeout = setTimeout(() => terminate("timeout"), input.timeoutMs);
+hardTimer = setTimeout(() => { signalTree("SIGKILL"); finish({ ok: false, timedOut: true }); }, input.timeoutMs + input.killGraceMs + 1000);
+for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => { signalTree("SIGKILL"); process.exit(1); });
+child.once("error", error => { clearTimeout(timeout); finish({ ok: false, spawnErrorCode: error.code }); });
+child.stdout.on("data", chunk => {
+  if (outputExceeded) return;
+  if (output.length + chunk.length > input.outputLimit) { terminate("output"); return; }
+  output = Buffer.concat([output, chunk]);
+});
+child.once("close", code => {
+  clearTimeout(timeout);
+  finish({ ok: !timedOut && !outputExceeded && code === 0, value: output.toString("utf8"), timedOut, outputExceeded, code });
+});
+if (input.commandFromStdin) child.stdin.end(input.command);
+`;
+
+type CredentialHelperResult = {
+	ok: boolean;
+	value?: string;
+	spawnErrorCode?: string;
+};
+
+function runCredentialHelper(
+	shell: string,
+	args: string[],
+	command: string,
+	commandFromStdin: boolean,
+): CredentialHelperResult {
+	const input = Buffer.from(
+		JSON.stringify({
+			shell,
+			args,
+			command,
+			commandFromStdin,
+			timeoutMs: CREDENTIAL_HELPER_TIMEOUT_MS,
+			killGraceMs: CREDENTIAL_HELPER_KILL_GRACE_MS,
+			outputLimit: CREDENTIAL_HELPER_OUTPUT_LIMIT,
+		}),
+	).toString("base64");
+	const result = spawnSync(process.execPath, ["-e", CREDENTIAL_HELPER_RUNNER, input], {
+		encoding: "utf-8",
+		timeout: CREDENTIAL_HELPER_TIMEOUT_MS + CREDENTIAL_HELPER_KILL_GRACE_MS + 2_000,
+		maxBuffer: CREDENTIAL_HELPER_OUTPUT_LIMIT * 2,
+		stdio: ["ignore", "pipe", "ignore"],
+		windowsHide: true,
+	});
+	if (result.error || result.status !== 0 || !result.stdout) return { ok: false };
+	try {
+		return JSON.parse(result.stdout) as CredentialHelperResult;
+	} catch {
+		return { ok: false };
+	}
+}
 
 function appendLiteral(parts: TemplatePart[], value: string): void {
 	if (!value) return;
@@ -154,28 +250,9 @@ function executeWithConfiguredShell(command: string): { executed: boolean; value
 	try {
 		const { shell, args, commandTransport } = getShellConfig();
 		const commandFromStdin = commandTransport === "stdin";
-		const result = spawnSync(shell, commandFromStdin ? args : [...args, command], {
-			encoding: "utf-8",
-			input: commandFromStdin ? command : undefined,
-			timeout: 10000,
-			stdio: [commandFromStdin ? "pipe" : "ignore", "pipe", "ignore"],
-			shell: false,
-			windowsHide: true,
-		});
-
-		if (result.error) {
-			const error = result.error as NodeJS.ErrnoException;
-			if (error.code === "ENOENT") {
-				return { executed: false, value: undefined };
-			}
-			return { executed: true, value: undefined };
-		}
-
-		if (result.status !== 0) {
-			return { executed: true, value: undefined };
-		}
-
-		const value = (result.stdout ?? "").trim();
+		const result = runCredentialHelper(shell, args, command, commandFromStdin);
+		if (result.spawnErrorCode === "ENOENT") return { executed: false, value: undefined };
+		const value = result.ok ? result.value?.trim() : undefined;
 		return { executed: true, value: value || undefined };
 	} catch {
 		return { executed: false, value: undefined };
@@ -183,16 +260,13 @@ function executeWithConfiguredShell(command: string): { executed: boolean; value
 }
 
 function executeWithDefaultShell(command: string): string | undefined {
-	try {
-		const output = execSync(command, {
-			encoding: "utf-8",
-			timeout: 10000,
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		return output.trim() || undefined;
-	} catch {
-		return undefined;
-	}
+	const result = runCredentialHelper(
+		process.platform === "win32" ? process.env.ComSpec || "cmd.exe" : "/bin/sh",
+		process.platform === "win32" ? ["/d", "/s", "/c"] : ["-c"],
+		command,
+		false,
+	);
+	return result.ok ? result.value?.trim() || undefined : undefined;
 }
 
 function executeCommandUncached(commandConfig: string): string | undefined {

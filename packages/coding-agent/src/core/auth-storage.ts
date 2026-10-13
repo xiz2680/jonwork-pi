@@ -3,8 +3,21 @@
  * Provider auth orchestration belongs to ModelRuntime and pi-ai Models.
  */
 
+import { randomUUID } from "node:crypto";
 import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import {
+	chmodSync,
+	closeSync,
+	existsSync,
+	fsyncSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	renameSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { setTimeout as sleep } from "timers/promises";
@@ -23,6 +36,11 @@ type LockResult<T> = {
 
 // The mode applies only on creation so administrator-managed modes and ACLs remain intact.
 const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8", mode: 0o600 } as const;
+
+export type AuthStorageWriteHooks = {
+	afterTempFsync?: () => void;
+	afterRename?: () => void;
+};
 
 type AuthFileReload = {
 	controller: AbortController;
@@ -48,9 +66,11 @@ export interface AuthStorageBackend {
 
 export class FileAuthStorageBackend implements AuthStorageBackend {
 	private authPath: string;
+	private writeHooks: AuthStorageWriteHooks | undefined;
 
-	constructor(authPath: string = join(getAgentDir(), "auth.json")) {
+	constructor(authPath: string = join(getAgentDir(), "auth.json"), writeHooks?: AuthStorageWriteHooks) {
 		this.authPath = normalizePath(authPath);
+		this.writeHooks = writeHooks;
 	}
 
 	private ensureParentDir(): void {
@@ -62,7 +82,38 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 
 	private ensureFileExists(): void {
 		if (!existsSync(this.authPath)) {
-			writeFileSync(this.authPath, "{}", AUTH_FILE_WRITE_OPTIONS);
+			this.atomicWrite("{}");
+		}
+	}
+
+	private atomicWrite(content: string): void {
+		const directory = dirname(this.authPath);
+		const tempPath = join(directory, `.${process.pid}-${randomUUID()}.auth.tmp`);
+		let fd: number | undefined;
+		try {
+			fd = openSync(tempPath, "wx", AUTH_FILE_WRITE_OPTIONS.mode);
+			writeFileSync(fd, content, AUTH_FILE_WRITE_OPTIONS.encoding);
+			fsyncSync(fd);
+			this.writeHooks?.afterTempFsync?.();
+			if (existsSync(this.authPath)) chmodSync(tempPath, statSync(this.authPath).mode & 0o777);
+			closeSync(fd);
+			fd = undefined;
+			renameSync(tempPath, this.authPath);
+			this.writeHooks?.afterRename?.();
+			const directoryFd = openSync(directory, "r");
+			try {
+				fsyncSync(directoryFd);
+			} finally {
+				closeSync(directoryFd);
+			}
+		} catch (error) {
+			if (fd !== undefined) closeSync(fd);
+			try {
+				unlinkSync(tempPath);
+			} catch (cleanupError) {
+				if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") throw cleanupError;
+			}
+			throw error;
 		}
 	}
 
@@ -103,7 +154,7 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 			const current = existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
 			const { result, next } = fn(current);
 			if (next !== undefined) {
-				writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+				this.atomicWrite(next);
 			}
 			return result;
 		} finally {
@@ -184,7 +235,7 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 			throwIfCompromised();
 			options?.signal?.throwIfAborted();
 			if (next !== undefined) {
-				writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+				this.atomicWrite(next);
 			}
 			throwIfCompromised();
 			return result;

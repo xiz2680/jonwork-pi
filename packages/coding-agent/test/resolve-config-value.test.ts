@@ -54,6 +54,28 @@ describe("resolveConfigValue", () => {
 		expect(resolveConfigValue("!echo 'hello world' | tr ' ' '-'")).toBe("hello-world");
 	});
 
+	test("rejects credential helper output above the bounded capture limit", () => {
+		const startedAt = Date.now();
+		expect(
+			resolveConfigValueUncached(
+				`!${process.execPath} -e 'process.stdout.write("x".repeat(70000)); setInterval(() => {}, 1000)'`,
+			),
+		).toBeUndefined();
+		expect(Date.now() - startedAt).toBeLessThan(5_000);
+	});
+
+	test.skipIf(process.platform === "win32")("bounds timeout and kills the credential helper process tree", () => {
+		const pidPath = join(tempDir, "descendant.pid");
+		const fixture = join(import.meta.dirname, "fixtures", "credential-helper-tree.mjs");
+		const startedAt = Date.now();
+		expect(resolveConfigValueUncached(`!${process.execPath} ${fixture} ${pidPath}`)).toBeUndefined();
+		const elapsed = Date.now() - startedAt;
+		expect(elapsed).toBeGreaterThanOrEqual(10_000);
+		expect(elapsed).toBeLessThan(12_000);
+		const pid = Number(readFileSync(pidPath, "utf8"));
+		expect(() => process.kill(pid, 0)).toThrow();
+	});
+
 	test.each(["!exit 1", "!nonexistent-command-12345", "!printf ''"])(
 		"returns undefined when command resolution fails: %s",
 		(command) => {

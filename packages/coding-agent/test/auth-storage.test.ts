@@ -1,4 +1,5 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CredentialStore, createModels, type Provider } from "@earendil-works/pi-ai";
@@ -153,6 +154,35 @@ describe("AuthStorage", () => {
 		await storage.modify("anthropic", async () => ({ type: "api_key", key: "new" }));
 
 		expect(statSync(authJsonPath).mode & 0o777).toBe(0o660);
+	});
+
+	test.skipIf(process.platform === "win32")("survives real process crashes at atomic auth-file boundaries", () => {
+		const fixture = join(import.meta.dirname, "fixtures", "auth-storage-crash.ts");
+		const beforePath = join(tempDir, "before-auth.json");
+		const afterPath = join(tempDir, "after-auth.json");
+		for (const path of [beforePath, afterPath]) {
+			writeFileSync(path, JSON.stringify({ anthropic: { type: "api_key", key: "old" } }));
+			chmodSync(path, 0o600);
+		}
+		const beforeRename = spawnSync(process.execPath, [
+			"--experimental-strip-types",
+			fixture,
+			beforePath,
+			"temp-fsync",
+		]);
+		expect(beforeRename.signal).toBe("SIGKILL");
+		expect(JSON.parse(readFileSync(beforePath, "utf8"))).toEqual({
+			anthropic: { type: "api_key", key: "old" },
+		});
+
+		const afterRename = spawnSync(process.execPath, ["--experimental-strip-types", fixture, afterPath, "rename"]);
+		expect(afterRename.signal).toBe("SIGKILL");
+		expect(JSON.parse(readFileSync(afterPath, "utf8"))).toEqual({
+			anthropic: { type: "api_key", key: "old" },
+			openai: { type: "api_key", key: "new" },
+		});
+		expect(statSync(afterPath).mode & 0o777).toBe(0o600);
+		expect(readdirSync(tempDir).filter((name) => name.endsWith(".auth.tmp"))).toHaveLength(1);
 	});
 
 	test("modify persists a credential while preserving unrelated external edits", async () => {
