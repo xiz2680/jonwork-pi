@@ -65,6 +65,12 @@ describe("Pi Gateway v1 OpenAPI contract", () => {
 			expect(parameters.map((parameter) => parameter.$ref)).toContain("#/components/parameters/IdempotencyKey");
 			expect(parameters.map((parameter) => parameter.$ref)).toContain("#/components/parameters/IfMatch");
 		}
+		const deletion = object(object(paths["/v1/sessions/{sessionId}"]).delete);
+		const deletionParameters = deletion.parameters as Array<Record<string, string>>;
+		expect(deletionParameters.map((parameter) => parameter.$ref)).toEqual([
+			"#/components/parameters/IdempotencyKey",
+			"#/components/parameters/IfMatch",
+		]);
 	});
 
 	test("defines PKCE exchange, refresh rotation, and idempotent revocation", async () => {
@@ -108,7 +114,7 @@ describe("Pi Gateway v1 OpenAPI contract", () => {
 		const upload = object(object(paths["/v1/attachments"]).post);
 		const uploadContent = object(object(upload.requestBody).content);
 		const uploadTypes = Object.keys(uploadContent).sort();
-		expect(uploadTypes).toEqual(["application/octet-stream", "image/jpeg", "image/png", "image/webp"]);
+		expect(uploadTypes).toEqual(["image/jpeg", "image/png", "image/webp"]);
 		expect(uploadTypes).not.toContain("application/json");
 		expect(uploadTypes).not.toContain("multipart/form-data");
 		for (const mediaType of uploadTypes) {
@@ -185,12 +191,18 @@ describe("Pi Gateway v1 fixtures", () => {
 		expect(authentication.scopes).toEqual(["pi.gateway"]);
 		expect(authentication.refreshTokenRotation).toBe("required");
 		expect(authentication.revocationEndpoint).toBe("https://gateway.example.test/v1/auth/revoke");
+		expect(object(discovery.compatibility)).toEqual({
+			minimumApiVersion: "1.0",
+			maximumApiVersion: "1.0",
+		});
 		const capabilities = object(discovery.capabilities);
 		for (const required of [
 			"repositories",
 			"models",
 			"thinking",
 			"sessions",
+			"sessionSearch",
+			"sessionDelete",
 			"commands",
 			"sse",
 			"authoritativeSnapshot",
@@ -205,7 +217,13 @@ describe("Pi Gateway v1 fixtures", () => {
 		]) {
 			expect(capabilities[required], required).toBe(true);
 		}
-		expect(object(capabilities.attachments)).toEqual({ images: true, files: false });
+		expect(object(capabilities.attachments)).toEqual({
+			images: true,
+			files: false,
+			sources: ["photo_library", "camera", "file_picker"],
+			mediaTypes: ["image/png", "image/jpeg", "image/webp"],
+			modelCompatibilityField: "attachments.supported",
+		});
 		const limits = object(discovery.limits);
 		expect(limits.attachmentDigestAlgorithm).toBe("sha-256");
 		expect(limits.attachmentMediaTypes).toEqual(["image/png", "image/jpeg", "image/webp"]);

@@ -1,6 +1,7 @@
 {
 	"contract": "pi-gateway/1.0",
 	"apiVersion": "1.0",
+	"compatibility": {"minimumApiVersion": "1.0", "maximumApiVersion": "1.0"},
 	"authentication": {
 		"type": "oauth2_authorization_code",
 		"clientId": "pi-ios",
@@ -17,6 +18,8 @@
 		"models": true,
 		"thinking": true,
 		"sessions": true,
+		"sessionSearch": true,
+		"sessionDelete": true,
 		"commands": true,
 		"sse": true,
 		"authoritativeSnapshot": true,
@@ -28,7 +31,13 @@
 		"release": true,
 		"abort": true,
 		"retry": true,
-		"attachments": {"images": true, "files": false}
+		"attachments": {
+			"images": true,
+			"files": false,
+			"sources": ["photo_library", "camera", "file_picker"],
+			"mediaTypes": ["image/png", "image/jpeg", "image/webp"],
+			"modelCompatibilityField": "attachments.supported"
+		}
 	},
 	"limits": {
 		"readTimeoutMs": 10000,

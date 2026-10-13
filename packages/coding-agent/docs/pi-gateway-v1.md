@@ -1,6 +1,6 @@
 # Pi Gateway Contract v1
 
-Status: implementable contract and reference primitives. No production HTTP/SSE gateway in this repository currently implements it.
+Status: implemented by the `jonwork-server` Pi Gateway candidate. This repository owns the frozen contract, reference primitives, OpenAPI, and fixtures.
 
 The normative API description is [`pi-gateway-v1.openapi.yaml`](./pi-gateway-v1.openapi.yaml). The fixtures in `test/fixtures/gateway-v1/` and `test/gateway-contract.test.ts` are executable examples. A gateway MUST fail closed when a required capability is missing. It MUST NOT route a Pi Session request to stateless chat completions.
 
@@ -12,15 +12,15 @@ The 2026-10-13 audit found three distinct surfaces:
 - this repository is package version `1.1.0`, with Pi binary protocol version `8`. Its experimental services provide durable Sessions, model/thinking configuration, transcript snapshots, prompt/steer/follow-up/abort/compaction, inline image input, and multiple presentation attachments. The transport has no peer authentication, public HTTP/SSE adapter, controller lease, or durable event replay journal.
 - `jonwork-server` publishes contract `1.2.0`. It provides iOS PKCE/device authentication, model discovery, and OpenAI-compatible chat SSE, but no Pi Session lifecycle, authoritative transcript, control ownership, tool events, replay, or takeover/release.
 
-Combining those components is production work, not a compatibility assumption. Until it exists and passes this contract, production Pi Gateway availability is blocked.
+The `jonwork-server` candidate now combines those components behind the versioned contract. Production availability remains blocked until independent review, full regression, and an authorized release are complete.
 
 ## Version and capability discovery
 
-`GET /.well-known/pi-gateway` is the only unauthenticated resource. It returns the contract ID, semantic API version, authentication metadata, limits, and capability flags. Clients reject an unsupported major version before obtaining a token.
+`GET /.well-known/pi-gateway` is the only unauthenticated resource. It returns the contract ID, semantic API version, supported minimum/maximum API versions, authentication metadata, limits, and capability flags. Clients reject a version outside that range before obtaining a token. An optional `X-Pi-Gateway-Contract` request header on versioned resources makes a mismatch explicit as HTTP `426 version_incompatible` with safe compatibility details.
 
 The required production capability set is:
 
-`repositories`, `models`, `thinking`, `sessions`, `commands`, `sse`, `authoritativeSnapshot`, `eventIds`, `replay`, `idempotency`, `singleWriter`, `takeover`, `release`, `abort`, `retry`, and `attachments`.
+`repositories`, `models`, `thinking`, `sessions`, `sessionSearch`, `sessionDelete`, `commands`, `sse`, `authoritativeSnapshot`, `eventIds`, `replay`, `idempotency`, `singleWriter`, `takeover`, `release`, `abort`, `retry`, and `attachments`.
 
 Each capability is explicit. An absent or false required capability produces `capability_unavailable`; no alternate chat API is selected. Optional attachment kinds are advertised separately.
 
@@ -32,11 +32,13 @@ The token endpoint accepts only `authorization_code` and `refresh_token` form gr
 
 ## Sessions and single-writer control
 
-A Session is durable and identified by `sessionId`; clients never submit a server filesystem path. `POST /v1/sessions` creates a new Session. `POST /v1/sessions/{sessionId}/restore` starts or attaches the durable Session. `PATCH /v1/sessions/{sessionId}` renames it. List results distinguish durable existence from a running worker.
+A Session is durable and identified by stable `sessionId`; clients never submit a server filesystem path. `POST /v1/sessions` creates a new Session. `POST /v1/sessions/{sessionId}/restore` starts or attaches the durable Session. `PATCH /v1/sessions/{sessionId}` renames it. `GET /v1/sessions` accepts `repositoryId`, `query`, `state`, and `limit` filters and returns `{items,total,authoritative:true}`. Search is case-insensitive over the authoritative name and transcript. List results carry revision, cursor, lifecycle, run, and controller state so release is not confused with a merely stopped worker.
+
+`DELETE /v1/sessions/{sessionId}` requires the controller `clientId`, `If-Match`, and `Idempotency-Key`. It permanently removes the Session, controller, operation, event, outbox, mutation, and consumed attachment records. Its applied receipt has `deleted:true` and remains independently durable for the advertised idempotency retention window, so the same DELETE and mutation-receipt lookup still replay after the Session itself returns `session_not_found`. A stale revision or non-controller cannot start runtime teardown.
 
 Every authoritative snapshot contains `revision`, `lastEventId`, transcript, model/thinking configuration, run state, controller lease, and attachment references. A snapshot replaces all client-local Session state.
 
-At most one `clientId` is controller. Viewers may list, fetch snapshots, and consume events, but every mutation, including abort and retry, returns `not_controller`. Takeover is an explicit mutation and may return `session_busy` while a run is active. Release revokes the controller lease, aborts active work if required by policy, flushes durable state, retires the attachment, and emits `controller.changed` followed by `session.released`. It does not delete the Session.
+At most one `clientId` is controller. Viewers may list, fetch snapshots, and consume events, but every mutation, including abort and retry, returns `not_controller`. Takeover is an explicit mutation and may return retryable `session_busy` with `operation: "takeover"` and current lifecycle details while a run is active. Restore and deletion concurrency return retryable `restore_in_progress` and `session_deleting`; clients may also show local pending state while their request is outstanding. Release revokes the controller lease, aborts active work if required by policy, flushes durable state, retires the attachment, and emits `controller.changed` followed by `session.released`. It does not delete the Session.
 
 Every mutation carries:
 
@@ -117,7 +119,9 @@ The gateway retains at least the duration and count advertised by discovery. A c
 
 `POST /v1/attachments` uploads exactly one raw binary body with `Content-Type`, `Content-Length`, `Content-Digest`, percent-encoded UTF-8 `X-File-Name`, and an idempotency key. Multipart, JSON, data URLs, transfer compression, and base64 bodies are forbidden. `Content-Digest` uses `sha-256=:<base64>:` over the exact transmitted bytes. The decoded NFC filename is one display-only path component: NUL, `/`, `\\`, `.` and `..` are rejected. The default limits are four attachments per prompt, 10 MiB per attachment, 20 MiB total per prompt, a 30-second upload/download deadline, and a 255-byte UTF-8 filename. Discovery publishes the accepted media types and may lower, never silently raise, these limits for a client profile.
 
-The gateway validates declared length, streamed byte count, digest, media signature where applicable, authorized repository scope, and capability before persistence. A digest mismatch is `invalid_request`; incomplete, oversized, timed-out, unsupported, or quarantined uploads are not attachable. `application/octet-stream` is accepted only when the `files` capability is true. Attachment IDs are opaque, principal- and repository-scoped, expire if unused, and are consumed by reference; prompt JSON never embeds unbounded base64. Image support and general file support have independent capability flags.
+The gateway validates declared length, streamed byte count, digest, media signature where applicable, authorized repository scope, and capability before persistence. A digest mismatch is `invalid_request`; incomplete, oversized, timed-out, unsupported, or quarantined uploads are not attachable. `application/octet-stream` is accepted only when the `files` capability is true; the current candidate advertises `files:false` and accepts PNG, JPEG, and WebP only. Attachment IDs are opaque, principal- and repository-scoped, expire if unused, and are consumed by reference; prompt JSON never embeds unbounded base64. Image support and general file support have independent capability flags.
+
+Discovery exposes picker sources, accepted MIME types, global byte/count limits, and the model compatibility field. Every model exposes `attachments.supported`, `kinds`, `mediaTypes`, `maxBytes`, and `maxCount`; clients intersect those values with discovery before presenting a picker. Sending an image to an incompatible selected model returns `attachment_model_incompatible`. A non-`off` thinking level on a non-reasoning model returns `thinking_not_supported`.
 
 `GET /v1/attachments/{attachmentId}` returns metadata. `GET /v1/attachments/{attachmentId}/content` returns the original bytes with exact `Content-Type`, `Content-Length`, `Content-Digest`, and SHA-256 `ETag`; it never redirects to an untrusted URL. The gateway reauthorizes before headers and during streaming, and a truncated or digest-mismatched response is not a successful download. Range requests are not part of v1. Attachment content and metadata responses are `private, no-store`.
 

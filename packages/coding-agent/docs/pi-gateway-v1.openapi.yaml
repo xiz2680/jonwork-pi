@@ -149,6 +149,16 @@ paths:
         - in: query
           name: repositoryId
           schema: {type: string}
+        - in: query
+          name: query
+          description: Case-insensitive server-side search over Session name and authoritative transcript.
+          schema: {type: string, minLength: 1, maxLength: 200}
+        - in: query
+          name: state
+          schema: {enum: [idle, running, restoring, released, failed, stopped]}
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 100, default: 100}
       responses:
         "200":
           description: Durable Sessions visible to the principal.
@@ -156,11 +166,13 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required: [items, total, authoritative]
                 properties:
                   items:
                     type: array
                     items: {$ref: "#/components/schemas/SessionSummary"}
+                  total: {type: integer, minimum: 0}
+                  authoritative: {const: true}
         default: {$ref: "#/components/responses/Error"}
     post:
       operationId: createSession
@@ -219,6 +231,25 @@ paths:
               properties:
                 clientId: {$ref: "#/components/schemas/ClientId"}
                 name: {type: string, minLength: 1, maxLength: 200}
+      responses:
+        "200": {$ref: "#/components/responses/MutationAccepted"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: deleteSession
+      description: Permanently deletes the durable Session and its controller, operation, event, outbox, mutation, and consumed attachment state. The deletion receipt remains queryable and replayable for the idempotency retention window.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [clientId]
+              properties:
+                clientId: {$ref: "#/components/schemas/ClientId"}
       responses:
         "200": {$ref: "#/components/responses/MutationAccepted"}
         default: {$ref: "#/components/responses/Error"}
@@ -386,8 +417,6 @@ paths:
       requestBody:
         required: true
         content:
-          application/octet-stream:
-            schema: {type: string, format: binary}
           image/png:
             schema: {type: string, format: binary}
           image/jpeg:
@@ -914,10 +943,17 @@ components:
     GatewayDiscovery:
       type: object
       additionalProperties: false
-      required: [contract, apiVersion, authentication, capabilities, limits]
+      required: [contract, apiVersion, compatibility, authentication, capabilities, limits]
       properties:
         contract: {const: pi-gateway/1.0}
         apiVersion: {type: string, pattern: '^1\\.[0-9]+$'}
+        compatibility:
+          type: object
+          additionalProperties: false
+          required: [minimumApiVersion, maximumApiVersion]
+          properties:
+            minimumApiVersion: {const: "1.0"}
+            maximumApiVersion: {const: "1.0"}
         authentication:
           type: object
           additionalProperties: false
@@ -943,12 +979,14 @@ components:
         capabilities:
           type: object
           additionalProperties: false
-          required: [repositories, models, thinking, sessions, commands, sse, authoritativeSnapshot, eventIds, replay, idempotency, singleWriter, takeover, release, abort, retry, attachments]
+          required: [repositories, models, thinking, sessions, sessionSearch, sessionDelete, commands, sse, authoritativeSnapshot, eventIds, replay, idempotency, singleWriter, takeover, release, abort, retry, attachments]
           properties:
             repositories: {type: boolean}
             models: {type: boolean}
             thinking: {type: boolean}
             sessions: {type: boolean}
+            sessionSearch: {type: boolean}
+            sessionDelete: {type: boolean}
             commands: {type: boolean}
             sse: {type: boolean}
             authoritativeSnapshot: {type: boolean}
@@ -963,10 +1001,19 @@ components:
             attachments:
               type: object
               additionalProperties: false
-              required: [images, files]
+              required: [images, files, sources, mediaTypes, modelCompatibilityField]
               properties:
                 images: {type: boolean}
                 files: {type: boolean}
+                sources:
+                  type: array
+                  uniqueItems: true
+                  items: {enum: [photo_library, camera, file_picker]}
+                mediaTypes:
+                  type: array
+                  uniqueItems: true
+                  items: {enum: [image/png, image/jpeg, image/webp]}
+                modelCompatibilityField: {const: attachments.supported}
         limits: {$ref: "#/components/schemas/GatewayLimits"}
     GatewayLimits:
       type: object
@@ -1000,7 +1047,7 @@ components:
     Model:
       type: object
       additionalProperties: false
-      required: [provider, id, name, reasoning, input, thinkingLevels]
+      required: [provider, id, name, reasoning, input, thinkingLevels, attachments]
       properties:
         provider: {type: string, minLength: 1}
         id: {type: string, minLength: 1}
@@ -1016,34 +1063,65 @@ components:
           uniqueItems: true
         contextWindow: {type: integer, minimum: 1}
         maxOutputTokens: {type: integer, minimum: 1}
+        attachments:
+          type: object
+          additionalProperties: false
+          required: [supported, kinds, mediaTypes, maxBytes, maxCount]
+          properties:
+            supported: {type: boolean}
+            kinds:
+              type: array
+              uniqueItems: true
+              items: {enum: [image]}
+            mediaTypes:
+              type: array
+              uniqueItems: true
+              items: {enum: [image/png, image/jpeg, image/webp]}
+            maxBytes: {type: integer, minimum: 0, maximum: 10485760}
+            maxCount: {type: integer, minimum: 0, maximum: 4}
     SessionSummary:
       type: object
       additionalProperties: false
-      required: [sessionId, repositoryId, name, createdAt, modifiedAt, messageCount, runtime]
+      required: [sessionId, repositoryId, name, revision, lastEventId, createdAt, modifiedAt, messageCount, lifecycle, runtime, run, controller]
       properties:
         sessionId: {type: string}
         repositoryId: {type: string}
         name: {type: [string, "null"]}
+        revision: {type: integer, minimum: 1}
+        lastEventId: {$ref: "#/components/schemas/EventId"}
         createdAt: {type: string, format: date-time}
         modifiedAt: {type: string, format: date-time}
         messageCount: {type: integer, minimum: 0}
         runtime: {enum: [stopped, starting, running, stopping]}
+        lifecycle: {enum: [idle, running, restoring, released, failed, stopped]}
+        run:
+          type: object
+          required: [status]
+          properties:
+            status: {enum: [idle, running, failed]}
+        controller:
+          type: object
+          required: [clientId, leaseExpiresAt]
+          properties:
+            clientId: {type: [string, "null"]}
+            leaseExpiresAt: {type: [string, "null"], format: date-time}
     SessionSnapshot:
       type: object
       additionalProperties: false
-      required: [contract, sessionId, repositoryId, revision, lastEventId, runtime, run, controller, configuration, messages, attachments]
+      required: [contract, sessionId, repositoryId, revision, lastEventId, lifecycle, runtime, run, controller, configuration, messages, attachments]
       properties:
         contract: {const: pi-gateway/1.0}
         sessionId: {type: string}
         repositoryId: {type: string}
         revision: {type: integer, minimum: 0}
         lastEventId: {$ref: "#/components/schemas/EventId"}
+        lifecycle: {enum: [idle, running, restoring, released, failed, stopped]}
         runtime: {enum: [stopped, starting, running, stopping]}
         run:
           type: object
           required: [status, operationId]
           properties:
-            status: {enum: [idle, queued, running, settling]}
+            status: {enum: [idle, running, failed]}
             operationId: {type: [string, "null"]}
         controller:
           type: object
@@ -1168,6 +1246,7 @@ components:
         operationId: {type: [string, "null"]}
         afterEventId: {$ref: "#/components/schemas/EventId"}
         responseStatus: {type: integer, minimum: 200, maximum: 299}
+        deleted: {type: boolean}
     PendingMutationReceipt:
       type: object
       additionalProperties: false
@@ -1192,7 +1271,7 @@ components:
           required: [code, message, requestId, retryable]
           properties:
             code:
-              enum: [invalid_request, unauthenticated, forbidden, capability_unavailable, session_not_found, session_not_running, not_controller, session_busy, revision_conflict, idempotency_conflict, mutation_not_found, invalid_replay_cursor, replay_cursor_expired, duplicate_event, out_of_order_event, event_gap, invalid_event_lifecycle, attachment_not_found, attachment_too_large, attachment_type_unsupported, attachment_limit_exceeded, timeout, rate_limited, internal_error]
+              enum: [invalid_request, unauthenticated, forbidden, capability_unavailable, version_incompatible, session_not_found, session_not_running, restore_in_progress, session_deleting, not_controller, session_busy, revision_conflict, idempotency_conflict, mutation_not_found, invalid_replay_cursor, replay_cursor_expired, duplicate_event, out_of_order_event, event_gap, invalid_event_lifecycle, attachment_not_found, attachment_too_large, attachment_type_unsupported, attachment_limit_exceeded, attachment_model_incompatible, thinking_not_supported, timeout, rate_limited, internal_error]
             message: {type: string}
             requestId: {type: string}
             retryable: {type: boolean}
