@@ -251,7 +251,7 @@ paths:
               properties:
                 clientId: {$ref: "#/components/schemas/ClientId"}
       responses:
-        "200": {$ref: "#/components/responses/MutationAccepted"}
+        "200": {$ref: "#/components/responses/DeleteMutationAccepted"}
         default: {$ref: "#/components/responses/Error"}
   /v1/sessions/{sessionId}/restore:
     parameters:
@@ -534,6 +534,13 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/MutationReceipt"}
+    DeleteMutationAccepted:
+      description: Session deletion applied or an identical deletion receipt replayed.
+      headers:
+        Idempotency-Replayed: {$ref: "#/components/headers/IdempotencyReplayed"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/DeleteMutationReceipt"}
     Error:
       description: Structured failure.
       content:
@@ -1246,7 +1253,18 @@ components:
         operationId: {type: [string, "null"]}
         afterEventId: {$ref: "#/components/schemas/EventId"}
         responseStatus: {type: integer, minimum: 200, maximum: 299}
-        deleted: {type: boolean}
+    DeleteMutationReceipt:
+      type: object
+      additionalProperties: false
+      required: [status, sessionId, revision, operationId, afterEventId, responseStatus, deleted]
+      properties:
+        status: {const: applied}
+        sessionId: {type: string}
+        revision: {type: integer, minimum: 1}
+        operationId: {type: "null"}
+        afterEventId: {$ref: "#/components/schemas/EventId"}
+        responseStatus: {const: 200}
+        deleted: {const: true}
     PendingMutationReceipt:
       type: object
       additionalProperties: false
@@ -1258,6 +1276,7 @@ components:
       oneOf:
         - $ref: "#/components/schemas/PendingMutationReceipt"
         - $ref: "#/components/schemas/MutationReceipt"
+        - $ref: "#/components/schemas/DeleteMutationReceipt"
       discriminator:
         propertyName: status
     ErrorResponse:
